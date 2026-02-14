@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.0
-// @description  Unified NYT Spelling Bee enhancements: dock hiding, visual emoji feedback, Bee Buddy, Word Explorer with definitions/images, and high-viz mode
+// @version      1.1
+// @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer with definitions/images
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
 // @run-at       document-idle
+// @updateURL    https://raw.githubusercontent.com/wbull/better-bee/main/better_bee.user.js
+// @downloadURL  https://raw.githubusercontent.com/wbull/better-bee/main/better_bee.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        unsafeWindow
