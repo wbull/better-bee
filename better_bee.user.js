@@ -336,9 +336,18 @@
     if (e.target === overlay) closeOverlay();
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && overlay.style.display !== 'none') {
+    if (e.key !== 'Escape') return;
+    // Close our Word Explorer overlay first
+    if (overlay.style.display !== 'none') {
       e.preventDefault();
       closeOverlay();
+      return;
+    }
+    // Close NYT native modals (e.g. "Keep playing" screen)
+    const nytClose = document.querySelector('.sb-modal-close, .sb-modal-frame .pz-moment__close, [class*="modalClose"], .pz-moment__close');
+    if (nytClose) {
+      e.preventDefault();
+      nytClose.click();
     }
   });
 
