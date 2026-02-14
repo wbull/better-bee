@@ -507,7 +507,6 @@
 
         li.addEventListener('click', e => {
           e.preventDefault();
-          e.stopPropagation();
           showWordExplorer(wordText);
         });
         li.addEventListener('keydown', e => {
