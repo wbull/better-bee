@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.3
+// @version      1.4
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -188,26 +188,6 @@
       0%, 100% { filter: drop-shadow(0 0 0 transparent); }
       50% { filter: drop-shadow(0 0 8px #f8cd05); }
     }
-
-    /* Word list toggle button */
-    #we-wordlist-toggle {
-      position: fixed;
-      bottom: 10px;
-      right: 50px;
-      cursor: pointer;
-      font-size: 22px;
-      z-index: 9999;
-      user-select: none;
-      line-height: 1;
-    }
-
-    /* Word list collapsed state */
-    body.we-wordlist-hidden .sb-wordlist-box,
-    body.we-wordlist-hidden .sb-wordlist-pag,
-    body.we-wordlist-hidden .sb-wordlist-drawer,
-    body.we-wordlist-hidden .sb-recent-words {
-      display: none !important;
-    }
   `);
 
   // ─── Module 1: Hide NYT Dock (runs on ALL NYT pages) ───────────────
@@ -227,6 +207,16 @@
 
   // ─── Guard: Only run modules 2–4 on Spelling Bee page ──────────────
   if (!location.pathname.includes('/puzzles/spelling-bee')) return;
+
+  // ─── Auto-dismiss Play/Resume interstitials ─────────────────────────
+  function dismissInterstitials() {
+    const btn = document.querySelector('button.pz-moment__button.primary');
+    if (btn) { btn.click(); return true; }
+    const close = document.querySelector('.pz-moment__close');
+    if (close) { close.click(); return true; }
+    return false;
+  }
+  dismissInterstitials(); // try immediately
 
   // ─── Module 2: Visual Feedback Emojis ──────────────────────────────
   const emojiEl = document.createElement('div');
@@ -312,27 +302,6 @@
     document.body.appendChild(bee);
   }
 
-  // Word list expand/collapse toggle
-  if (!document.getElementById('we-wordlist-toggle')) {
-    const toggle = document.createElement('div');
-    toggle.id = 'we-wordlist-toggle';
-    toggle.textContent = '\uD83D\uDCCB';
-    toggle.setAttribute('role', 'button');
-    toggle.setAttribute('aria-label', 'Toggle word list');
-    toggle.tabIndex = 0;
-
-    function toggleWordList() {
-      document.body.classList.toggle('we-wordlist-hidden');
-      toggle.setAttribute('aria-expanded',
-        !document.body.classList.contains('we-wordlist-hidden'));
-    }
-    toggle.addEventListener('click', toggleWordList);
-    toggle.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleWordList(); }
-    });
-
-    document.body.appendChild(toggle);
-  }
 
   // ─── Module 4: Word Explorer ────────────────────────────────────────
 
@@ -547,6 +516,14 @@
         li.setAttribute('aria-label', `Look up ${wordText}`);
         li.tabIndex = 0;
 
+        li.addEventListener('pointerdown', e => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }, true);
+        li.addEventListener('mousedown', e => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }, true);
         li.addEventListener('click', e => {
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -564,6 +541,7 @@
   }
 
   // ─── Shared MutationObserver (emoji feedback + word list) ───────────
+  let interstitialDismissed = false;
   const mainObserver = new MutationObserver(mutations => {
     let shouldProcessWords = false;
 
@@ -605,6 +583,10 @@
     }
 
     if (shouldProcessWords) processWordList();
+
+    if (!interstitialDismissed) {
+      interstitialDismissed = dismissInterstitials();
+    }
   });
 
   mainObserver.observe(document.body, { childList: true, subtree: true });
