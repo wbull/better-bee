@@ -344,7 +344,7 @@
       return;
     }
     // Close NYT native modals (e.g. "Keep playing" screen)
-    const nytClose = document.querySelector('.sb-modal-close, .sb-modal-frame .pz-moment__close, [class*="modalClose"], .pz-moment__close');
+    const nytClose = document.querySelector('.pz-icon-close, .sb-modal-close, .pz-moment__close');
     if (nytClose) {
       e.preventDefault();
       nytClose.click();
