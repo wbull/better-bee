@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.2
+// @version      1.3
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -550,6 +550,7 @@
         li.addEventListener('click', e => {
           e.preventDefault();
           e.stopImmediatePropagation();
+          li.blur();
           showWordExplorer(wordText);
         }, true);
         li.addEventListener('keydown', e => {
