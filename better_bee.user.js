@@ -159,11 +159,27 @@
       background: #fff; border-radius: 12px; padding: 16px 20px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.25); font-family: monospace;
       display: flex; align-items: center; gap: 12px;
-      transform: translateY(120%); opacity: 0;
-      transition: transform 0.3s ease, opacity 0.3s ease;
+      transform: translateY(120%) scale(0.8); opacity: 0;
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
     }
-    .we-hint-toast.we-visible { transform: translateY(0); opacity: 1; }
+    .we-hint-toast.we-visible {
+      transform: translateY(0) scale(1); opacity: 1;
+    }
+    .we-hint-toast.we-got-it {
+      animation: hint-got-it 0.6s ease forwards;
+    }
+    @keyframes hint-got-it {
+      0% { transform: translateY(0) scale(1); opacity: 1; }
+      30% { transform: translateY(0) scale(1.08); }
+      100% { transform: translateY(-20px) scale(0.9); opacity: 0; }
+    }
     .we-hint-toast-text { font-size: 28px; font-weight: 700; letter-spacing: 2px; }
+    .we-hint-toast-check {
+      font-size: 32px; line-height: 1;
+      opacity: 0; transform: scale(0);
+      transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .we-hint-toast-check.we-visible { opacity: 1; transform: scale(1); }
     .we-hint-toast-close {
       background: none; border: none; cursor: pointer;
       font-size: 22px; color: #888; padding: 4px 8px; line-height: 1;
@@ -518,6 +534,18 @@
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
             if (type) showEmoji(EMOJIS[type]);
+            if (type === 'success' && hintActive) {
+              clearTimeout(hintTimer);
+              // Show green check, then animate out and advance
+              hintToastCheck.classList.add('we-visible');
+              setTimeout(() => {
+                hintToast.classList.add('we-got-it');
+                setTimeout(() => {
+                  hideHintToast();
+                  nextHint();
+                }, 600);
+              }, 400);
+            }
           }, 100);
         }
 
@@ -540,10 +568,11 @@
   // Create hint toast element
   const hintToast = document.createElement('div');
   hintToast.className = 'we-hint-toast';
-  hintToast.innerHTML = '<span class="we-hint-toast-text"></span><button class="we-hint-toast-close" aria-label="Dismiss hint">&times;</button>';
+  hintToast.innerHTML = '<span class="we-hint-toast-text"></span><span class="we-hint-toast-check">\u2705</span><button class="we-hint-toast-close" aria-label="Dismiss hint">&times;</button>';
   document.body.appendChild(hintToast);
 
   const hintToastText = hintToast.querySelector('.we-hint-toast-text');
+  const hintToastCheck = hintToast.querySelector('.we-hint-toast-check');
   const hintToastClose = hintToast.querySelector('.we-hint-toast-close');
 
   function getAnswers() {
@@ -593,14 +622,15 @@
 
   function showHintToast(text) {
     hintToastText.textContent = text;
-    // Force reflow before adding visible class
-    hintToast.classList.remove('we-visible');
-    hintToast.offsetHeight;
+    hintToastCheck.classList.remove('we-visible');
+    hintToast.classList.remove('we-got-it', 'we-visible');
+    hintToast.offsetHeight; // reflow
     hintToast.classList.add('we-visible');
   }
 
   function hideHintToast() {
-    hintToast.classList.remove('we-visible');
+    hintToast.classList.remove('we-visible', 'we-got-it');
+    hintToastCheck.classList.remove('we-visible');
   }
 
   function nextHint() {
