@@ -188,6 +188,26 @@
       0%, 100% { filter: drop-shadow(0 0 0 transparent); }
       50% { filter: drop-shadow(0 0 8px #f8cd05); }
     }
+
+    /* Word list toggle button */
+    #we-wordlist-toggle {
+      position: fixed;
+      bottom: 10px;
+      right: 50px;
+      cursor: pointer;
+      font-size: 22px;
+      z-index: 9999;
+      user-select: none;
+      line-height: 1;
+    }
+
+    /* Word list collapsed state */
+    body.we-wordlist-hidden .sb-wordlist-box,
+    body.we-wordlist-hidden .sb-wordlist-pag,
+    body.we-wordlist-hidden .sb-wordlist-drawer,
+    body.we-wordlist-hidden .sb-recent-words {
+      display: none !important;
+    }
   `);
 
   // ─── Module 1: Hide NYT Dock (runs on ALL NYT pages) ───────────────
@@ -290,6 +310,28 @@
     });
 
     document.body.appendChild(bee);
+  }
+
+  // Word list expand/collapse toggle
+  if (!document.getElementById('we-wordlist-toggle')) {
+    const toggle = document.createElement('div');
+    toggle.id = 'we-wordlist-toggle';
+    toggle.textContent = '\uD83D\uDCCB';
+    toggle.setAttribute('role', 'button');
+    toggle.setAttribute('aria-label', 'Toggle word list');
+    toggle.tabIndex = 0;
+
+    function toggleWordList() {
+      document.body.classList.toggle('we-wordlist-hidden');
+      toggle.setAttribute('aria-expanded',
+        !document.body.classList.contains('we-wordlist-hidden'));
+    }
+    toggle.addEventListener('click', toggleWordList);
+    toggle.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleWordList(); }
+    });
+
+    document.body.appendChild(toggle);
   }
 
   // ─── Module 4: Word Explorer ────────────────────────────────────────
@@ -509,7 +551,7 @@
           e.preventDefault();
           e.stopImmediatePropagation();
           showWordExplorer(wordText);
-        });
+        }, true);
         li.addEventListener('keydown', e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
