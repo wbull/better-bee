@@ -8,8 +8,6 @@
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
 // @grant        unsafeWindow
 // @connect      api.dictionaryapi.dev
 // @connect      en.wikipedia.org
@@ -22,7 +20,6 @@
   const EMOJIS = { success: '\u2705', duplicate: '\uD83D\uDD95', error: '\u274C' };
   const apiCache = new Map();
   let requestCounter = 0;
-  let highViz = GM_getValue('we_highviz', false);
 
   // ─── Shared: CSS ────────────────────────────────────────────────────
   GM_addStyle(`
@@ -156,46 +153,6 @@
       color: #888;
     }
 
-    /* High-Viz mode */
-    body.we-highviz .we-panel {
-      background: #1a1a1a;
-      color: #fff;
-    }
-    body.we-highviz .we-panel-close { color: #aaa; }
-    body.we-highviz .we-panel-close:hover { color: #fff; }
-    body.we-highviz .we-panel-word {
-      color: #f8cd05;
-      font-size: 48px;
-    }
-    body.we-highviz .we-panel-phonetic { color: #ccc; font-size: 24px; }
-    body.we-highviz .we-panel-audio { font-size: 20px; }
-    body.we-highviz .we-panel-pos { color: #f8cd05; font-size: 24px; }
-    body.we-highviz .we-panel-def { color: #eee; font-size: 32px; }
-    body.we-highviz .we-panel-nodef { font-size: 28px; }
-    body.we-highviz .we-panel-loading { font-size: 28px; color: #ccc; }
-    body.we-highviz .we-panel-img img { max-height: 400px; }
-    body.we-highviz .we-panel-img-caption { color: #aaa; font-size: 18px; }
-
-    /* High-Viz toggle button */
-    .we-toggle {
-      position: fixed;
-      bottom: 80px;
-      right: 10px;
-      z-index: 9999;
-      border: 2px solid #f8cd05;
-      background: #fff;
-      border-radius: 8px;
-      padding: 6px 12px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 600;
-      transition: background 0.15s, transform 0.15s;
-      user-select: none;
-    }
-    .we-toggle:hover { background: #f8cd05; }
-    .we-toggle:focus { outline: 2px solid #f8cd05; outline-offset: 2px; }
-    .we-toggle[aria-checked="true"] { background: #f8cd05; }
-
     /* Hint toast */
     .we-hint-toast {
       position: fixed; bottom: 20px; left: 20px; z-index: 10001;
@@ -213,12 +170,6 @@
     }
     .we-hint-toast-close:hover { color: #000; }
     .we-hint-toast-close:focus { outline: 2px solid #f8cd05; outline-offset: 2px; }
-
-    /* High-viz hint toast */
-    body.we-highviz .we-hint-toast { background: #1a1a1a; }
-    body.we-highviz .we-hint-toast-text { color: #f8cd05; font-size: 40px; }
-    body.we-highviz .we-hint-toast-close { color: #aaa; }
-    body.we-highviz .we-hint-toast-close:hover { color: #fff; }
 
     /* Bee pulse when hinting */
     #bee-buddy.we-hinting { animation: bee-pulse 1.5s ease-in-out infinite; }
@@ -266,26 +217,21 @@
 
   function showEmoji(emoji) {
     clearTimeout(emojiTimer);
-    const isHV = document.body.classList.contains('we-highviz');
-    const scaleVal = isHV ? 1.4 : 1;
-    const displayMs = isHV ? 1000 : 600;
-
     emojiEl.style.transition = 'none';
     emojiEl.style.opacity = '0';
     emojiEl.style.transform = 'translateY(-50%) scale(0)';
-    emojiEl.style.fontSize = isHV ? '35vw' : '25vw';
     emojiEl.textContent = emoji;
     emojiEl.offsetHeight; // reflow
 
     emojiEl.style.transition = 'opacity 150ms ease-out, transform 150ms ease-out';
     emojiEl.style.opacity = '1';
-    emojiEl.style.transform = `translateY(-50%) scale(${scaleVal})`;
+    emojiEl.style.transform = 'translateY(-50%) scale(1)';
 
     emojiTimer = setTimeout(() => {
       emojiEl.style.transition = 'opacity 300ms ease-in, transform 300ms ease-in';
       emojiEl.style.opacity = '0';
       emojiEl.style.transform = 'translateY(-50%) scale(0.5)';
-    }, displayMs);
+    }, 600);
   }
 
   function classifyMessage(text) {
@@ -314,13 +260,12 @@
     bee.setAttribute('aria-label', 'Toggle spelling bee hints');
     bee.tabIndex = 0;
 
-    const startSize = highViz ? 30 : 20;
     bee.style.cssText = `
       position: fixed;
       bottom: 10px;
       right: 10px;
       cursor: pointer;
-      font-size: ${startSize}px;
+      font-size: 30px;
       z-index: 9999;
       user-select: none;
     `;
@@ -720,25 +665,6 @@
       hintTimer = setTimeout(nextHint, 120000);
     }
   });
-
-  // ─── High-Viz Toggle Button ─────────────────────────────────────────
-  const toggle = document.createElement('button');
-  toggle.className = 'we-toggle';
-  toggle.setAttribute('role', 'switch');
-  toggle.setAttribute('aria-label', 'Toggle high-visibility mode');
-  toggle.tabIndex = 0;
-
-  function applyHighViz(on) {
-    highViz = on;
-    document.body.classList.toggle('we-highviz', on);
-    toggle.setAttribute('aria-checked', String(on));
-    toggle.textContent = on ? '\uD83D\uDCA1 HI-VIZ ON' : '\uD83D\uDCA1 Hi-Viz';
-    GM_setValue('we_highviz', on);
-  }
-
-  toggle.addEventListener('click', () => applyHighViz(!highViz));
-  document.body.appendChild(toggle);
-  applyHighViz(highViz);
 
   // ─── Init ───────────────────────────────────────────────────────────
   processWordList();
