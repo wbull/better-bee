@@ -180,13 +180,6 @@
       transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     .we-hint-toast-check.we-visible { opacity: 1; transform: scale(1); }
-    .we-hint-toast-close {
-      background: none; border: none; cursor: pointer;
-      font-size: 22px; color: #888; padding: 4px 8px; line-height: 1;
-    }
-    .we-hint-toast-close:hover { color: #000; }
-    .we-hint-toast-close:focus { outline: 2px solid #f8cd05; outline-offset: 2px; }
-
     /* Bee pulse when hinting */
     #bee-buddy.we-hinting { animation: bee-pulse 1.5s ease-in-out infinite; }
     @keyframes bee-pulse {
@@ -544,7 +537,6 @@
             const type = classifyMessage(text);
             if (type) showEmoji(EMOJIS[type]);
             if (type === 'success' && hintActive) {
-              clearTimeout(hintTimer);
               // Show green check, then animate out and advance
               hintToastCheck.classList.add('we-visible');
               setTimeout(() => {
@@ -572,17 +564,15 @@
   let hintActive = false;
   let hintQueue = [];
   let hintIndex = 0;
-  let hintTimer = null;
 
   // Create hint toast element
   const hintToast = document.createElement('div');
   hintToast.className = 'we-hint-toast';
-  hintToast.innerHTML = '<span class="we-hint-toast-text"></span><span class="we-hint-toast-check">\u2705</span><button class="we-hint-toast-close" aria-label="Dismiss hint">&times;</button>';
+  hintToast.innerHTML = '<span class="we-hint-toast-text"></span><span class="we-hint-toast-check">\u2705</span>';
   document.body.appendChild(hintToast);
 
   const hintToastText = hintToast.querySelector('.we-hint-toast-text');
   const hintToastCheck = hintToast.querySelector('.we-hint-toast-check');
-  const hintToastClose = hintToast.querySelector('.we-hint-toast-close');
 
   function getAnswers() {
     try {
@@ -689,19 +679,16 @@
 
   function stopHints() {
     hintActive = false;
-    clearTimeout(hintTimer);
-    hintTimer = null;
     hideHintToast();
     const bee = document.getElementById('bee-buddy');
     if (bee) bee.classList.remove('we-hinting');
   }
 
-  // Dismiss toast → schedule next hint in 2 minutes
-  hintToastClose.addEventListener('click', () => {
-    hideHintToast();
-    if (hintActive) {
-      clearTimeout(hintTimer);
-      hintTimer = setTimeout(nextHint, 120000);
+  // Keyboard shortcut: ? to toggle hints
+  document.addEventListener('keydown', e => {
+    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      hintActive ? stopHints() : startHints();
     }
   });
 
