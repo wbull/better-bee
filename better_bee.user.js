@@ -35,9 +35,7 @@
     }
     .we-word:hover, .we-word:focus {
       color: #f8cd05;
-      outline: 2px solid #f8cd05;
-      outline-offset: 2px;
-      border-radius: 2px;
+      outline: none;
     }
 
     /* Overlay backdrop */
