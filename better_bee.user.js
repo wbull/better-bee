@@ -33,9 +33,11 @@
       cursor: pointer;
       transition: color 0.15s;
     }
-    .we-word:hover, .we-word:focus {
+    .we-word:hover, .we-word:focus, .we-word:active {
       color: #f8cd05;
-      outline: none;
+      outline: none !important;
+      box-shadow: none !important;
+      border-color: transparent !important;
     }
 
     /* Overlay backdrop */
