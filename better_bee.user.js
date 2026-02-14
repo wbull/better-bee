@@ -2,7 +2,7 @@
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
 // @version      1.1
-// @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer with definitions/images
+// @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
 // @run-at       document-idle
