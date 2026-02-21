@@ -205,8 +205,38 @@
   const dockObserver = new MutationObserver(hideDock);
   dockObserver.observe(document.documentElement, { childList: true, subtree: true });
 
-  // ─── Guard: Only run modules 2–4 on Spelling Bee page ──────────────
+  // ─── Guard: Only run modules 2+ on Spelling Bee page ───────────────
   if (!location.pathname.includes('/puzzles/spelling-bee')) return;
+
+  // ─── Module 2: Bee Buddy Button ───────────────────────────────────
+  if (!document.getElementById('bee-buddy')) {
+    const bee = document.createElement('div');
+    bee.id = 'bee-buddy';
+    bee.textContent = '\uD83D\uDC1D';
+    bee.setAttribute('role', 'link');
+    bee.setAttribute('aria-label', 'Open Spelling Bee Buddy');
+    bee.tabIndex = 0;
+
+    bee.style.cssText = `
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      cursor: pointer;
+      font-size: 30px;
+      z-index: 9999;
+      user-select: none;
+    `;
+
+    function goToBeeBuddy() {
+      window.open('https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html', '_blank');
+    }
+    bee.addEventListener('click', goToBeeBuddy);
+    bee.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToBeeBuddy(); }
+    });
+
+    document.body.appendChild(bee);
+  }
 
   // ─── Auto-dismiss Play/Resume interstitials ─────────────────────────
   function dismissInterstitials() {
@@ -218,7 +248,7 @@
   }
   dismissInterstitials(); // try immediately
 
-  // ─── Module 2: Visual Feedback Emojis ──────────────────────────────
+  // ─── Module 3: Visual Feedback Emojis ──────────────────────────────
   const emojiEl = document.createElement('div');
   Object.assign(emojiEl.style, {
     position: 'fixed',
@@ -267,41 +297,10 @@
     return 'error';
   }
 
-  // ─── Module 3: Bee Buddy Button ─────────────────────────────────────
   // Hide NYT game header
   document
     .querySelectorAll('.pz-header.pz-hide-loading.pz-game-header')
     .forEach(e => (e.style.display = 'none'));
-
-  if (!document.getElementById('bee-buddy')) {
-    const bee = document.createElement('div');
-    bee.id = 'bee-buddy';
-    bee.textContent = '\uD83D\uDC1D';
-    bee.setAttribute('role', 'button');
-    bee.setAttribute('aria-label', 'Toggle spelling bee hints');
-    bee.tabIndex = 0;
-
-    bee.style.cssText = `
-      position: fixed;
-      bottom: 10px;
-      right: 10px;
-      cursor: pointer;
-      font-size: 30px;
-      z-index: 9999;
-      user-select: none;
-    `;
-
-    function toggleHints() {
-      hintActive ? stopHints() : startHints();
-    }
-    bee.addEventListener('click', toggleHints);
-    bee.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleHints(); }
-    });
-
-    document.body.appendChild(bee);
-  }
-
 
   // ─── Module 4: Word Explorer ────────────────────────────────────────
 
