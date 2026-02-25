@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.7
+// @version      1.8
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -541,6 +541,7 @@
 
   // ─── Shared MutationObserver (emoji feedback + word list) ───────────
   let interstitialDismissed = false;
+  let hintDismissing = false; // guard against duplicate dismiss animations
   const mainObserver = new MutationObserver(mutations => {
     let shouldProcessWords = false;
 
@@ -562,15 +563,18 @@
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
             if (type) showEmoji(EMOJIS[type]);
-            if (type === 'success' && hintActive) {
+            if (type === 'success' && hintActive && !hintDismissing) {
               if (currentHintMatches(capturedWord)) {
+                hintDismissing = true;
                 hintToastCheck.classList.add('we-visible');
                 setTimeout(() => {
                   hintToast.classList.add('we-got-it');
                   setTimeout(() => {
                     hideHintToast();
-                    // Wait for hide to finish before showing next hint
-                    setTimeout(() => nextHint(), 400);
+                    setTimeout(() => {
+                      hintDismissing = false;
+                      nextHint();
+                    }, 400);
                   }, 600);
                 }, 400);
               }
