@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.5
+// @version      1.6
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -539,27 +539,10 @@
     }
   }
 
-  // ─── Track input text so we know the word before NYT clears it ─────
-  let lastInputText = '';
-  const inputObserver = new MutationObserver(() => {
-    const input = document.querySelector('.sb-hive-input-content');
-    const text = input?.textContent?.trim();
-    if (text && text.length >= 4) lastInputText = text;
-  });
-  const inputEl = document.querySelector('.sb-hive-input-content');
-  if (inputEl) {
-    inputObserver.observe(inputEl, { childList: true, characterData: true, subtree: true });
-  }
-
   // ─── Shared MutationObserver (emoji feedback + word list) ───────────
   let interstitialDismissed = false;
   const mainObserver = new MutationObserver(mutations => {
     let shouldProcessWords = false;
-    // Hook up input observer if it wasn't ready earlier
-    if (!inputEl) {
-      const el = document.querySelector('.sb-hive-input-content');
-      if (el) inputObserver.observe(el, { childList: true, characterData: true, subtree: true });
-    }
 
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
@@ -571,8 +554,10 @@
         if (node.querySelectorAll) targets.push(...node.querySelectorAll('.sb-message'));
 
         for (const target of targets) {
-          // Capture input text NOW, before NYT clears it
-          const capturedWord = lastInputText;
+          // Read input synchronously — the word is still there when the
+          // success message node is added, before NYT clears it
+          const input = document.querySelector('.sb-hive-input-content');
+          const capturedWord = input?.textContent?.trim() || '';
           setTimeout(() => {
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
