@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.6
+// @version      1.7
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -569,7 +569,8 @@
                   hintToast.classList.add('we-got-it');
                   setTimeout(() => {
                     hideHintToast();
-                    nextHint();
+                    // Wait for hide to finish before showing next hint
+                    setTimeout(() => nextHint(), 400);
                   }, 600);
                 }, 400);
               }
