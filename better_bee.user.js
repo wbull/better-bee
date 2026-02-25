@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.4
+// @version      1.5
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -539,10 +539,27 @@
     }
   }
 
+  // ─── Track input text so we know the word before NYT clears it ─────
+  let lastInputText = '';
+  const inputObserver = new MutationObserver(() => {
+    const input = document.querySelector('.sb-hive-input-content');
+    const text = input?.textContent?.trim();
+    if (text && text.length >= 4) lastInputText = text;
+  });
+  const inputEl = document.querySelector('.sb-hive-input-content');
+  if (inputEl) {
+    inputObserver.observe(inputEl, { childList: true, characterData: true, subtree: true });
+  }
+
   // ─── Shared MutationObserver (emoji feedback + word list) ───────────
   let interstitialDismissed = false;
   const mainObserver = new MutationObserver(mutations => {
     let shouldProcessWords = false;
+    // Hook up input observer if it wasn't ready earlier
+    if (!inputEl) {
+      const el = document.querySelector('.sb-hive-input-content');
+      if (el) inputObserver.observe(el, { childList: true, characterData: true, subtree: true });
+    }
 
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
@@ -554,31 +571,25 @@
         if (node.querySelectorAll) targets.push(...node.querySelectorAll('.sb-message'));
 
         for (const target of targets) {
+          // Capture input text NOW, before NYT clears it
+          const capturedWord = lastInputText;
           setTimeout(() => {
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
             if (type) showEmoji(EMOJIS[type]);
-          }, 100);
-          // Delay hint check longer so the word list has time to update
-          if (hintActive) {
-            setTimeout(() => {
-              const text = target.textContent?.trim();
-              const type = classifyMessage(text);
-              if (type === 'success') {
-                const foundWord = getLastFoundWord();
-                if (currentHintMatches(foundWord)) {
-                  hintToastCheck.classList.add('we-visible');
+            if (type === 'success' && hintActive) {
+              if (currentHintMatches(capturedWord)) {
+                hintToastCheck.classList.add('we-visible');
+                setTimeout(() => {
+                  hintToast.classList.add('we-got-it');
                   setTimeout(() => {
-                    hintToast.classList.add('we-got-it');
-                    setTimeout(() => {
-                      hideHintToast();
-                      nextHint();
-                    }, 600);
-                  }, 400);
-                }
+                    hideHintToast();
+                    nextHint();
+                  }, 600);
+                }, 400);
               }
-            }, 400);
-          }
+            }
+          }, 100);
         }
 
         // Word list: check if new words were added

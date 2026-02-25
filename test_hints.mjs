@@ -132,29 +132,41 @@ test('trims whitespace from word', () => {
   assert.strictEqual(getLastFoundWord(dom.window.document), 'amble');
 });
 
-// --- Integration: success message + hint match ---
-console.log('\nIntegration (success + hint match):');
+// --- Integration: captured input approach ---
+console.log('\nIntegration (captured input + hint match):');
 
-test('full flow: success message triggers match on recent word', () => {
+test('captured input matches hint on success', () => {
+  // Simulates: user typed "colic", input observer stored it,
+  // then success message fires and we check the captured word
+  const capturedWord = 'colic';
+  const type = classifyMessage('Nice!');
+  assert.strictEqual(type, 'success');
+  assert.strictEqual(currentHintMatches(capturedWord, ['CO.. 5'], 1), true);
+});
+
+test('captured input does not match different hint', () => {
+  const capturedWord = 'colic';
+  const type = classifyMessage('Great!');
+  assert.strictEqual(type, 'success');
+  assert.strictEqual(currentHintMatches(capturedWord, ['BA.. 5'], 1), false);
+});
+
+test('captured input works even when DOM has no words yet', () => {
+  // The key insight: we don't need to read the DOM at all anymore
+  const capturedWord = 'batch';
+  assert.strictEqual(currentHintMatches(capturedWord, ['BA.. 5'], 1), true);
+});
+
+// --- getLastFoundWord still works as fallback ---
+console.log('\ngetLastFoundWord (fallback):');
+
+test('full flow via DOM: recent words list', () => {
   const dom = new JSDOM(`
     <ul class="sb-recent-words"><li>batch</li><li>older</li></ul>
   `);
-  const msg = 'Nice!';
-  const type = classifyMessage(msg);
-  assert.strictEqual(type, 'success');
   const word = getLastFoundWord(dom.window.document);
   assert.strictEqual(word, 'batch');
   assert.strictEqual(currentHintMatches(word, ['BA.. 5'], 1), true);
-});
-
-test('full flow: success but word does not match current hint', () => {
-  const dom = new JSDOM(`
-    <ul class="sb-recent-words"><li>crane</li></ul>
-  `);
-  const type = classifyMessage('Great!');
-  assert.strictEqual(type, 'success');
-  const word = getLastFoundWord(dom.window.document);
-  assert.strictEqual(currentHintMatches(word, ['BA.. 5'], 1), false);
 });
 
 // --- Summary ---
