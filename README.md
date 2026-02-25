@@ -1,24 +1,35 @@
 # Better Bee
 
-A userscript that enhances the NYT Spelling Bee experience.
+Enhancements for the [NYT Spelling Bee](https://www.nytimes.com/puzzles/spelling-bee): emoji feedback, word definitions, hints, and more.
+
+[![Install directly](https://img.shields.io/badge/Install-Userscript-green)](https://raw.githubusercontent.com/wbull/better-bee/main/better_bee.user.js)
+
+<!-- Replace with your screen recording: -->
+<!-- ![Better Bee demo](demo.gif) -->
 
 ## Features
 
-- **Dock Hiding** -- Automatically removes the NYT promotional dock on all NYT pages
-- **Visual Emoji Feedback** -- Shows large emoji reactions for correct answers, duplicates, and errors
-- **Bee Buddy Hints** -- Click the bee icon to start a timed hint cycle for unfound words (first 2 letters + word length). Dismiss a hint and the next one auto-appears after 2 minutes
-- **Word Explorer** -- Click any found word to see its definition, pronunciation, and a Wikipedia image in an overlay panel
+- **Auto-dismiss interstitials** -- Skips the Play/Resume splash screen automatically
+- **Visual emoji feedback** -- Large emoji reactions for correct answers, duplicates, and errors
+- **Word Explorer** -- Click any found word to see its definition, pronunciation, and Wikipedia image
+- **Hint system** -- Press `?` to cycle through hints for unfound words (first 2 letters + word length)
+- **Bee Buddy link** -- The bee icon opens [Spelling Bee Buddy](https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html) in a new tab
+- **Dock hiding** -- Removes the NYT promotional dock on all NYT pages
 
-## Installation
+## Install
 
-1. Install a userscript manager ([Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/))
-2. Open `better_bee.user.js` and click "Raw" (or install from your manager's dashboard)
-3. Navigate to the [NYT Spelling Bee](https://www.nytimes.com/puzzles/spelling-bee)
+1. Install [Tampermonkey](https://www.tampermonkey.net/) or [Violentmonkey](https://violentmonkey.github.io/)
+2. **[Click here to install Better Bee](https://raw.githubusercontent.com/wbull/better-bee/main/better_bee.user.js)**
+3. Go to [NYT Spelling Bee](https://www.nytimes.com/puzzles/spelling-bee) and play
+
+Updates are delivered automatically via Tampermonkey/Violentmonkey.
 
 ## Usage
 
-- The bee icon appears in the bottom-right corner of the Spelling Bee page
-- **Click the bee** to start the hint cycle -- a toast slides up showing a hint like `AM.. 5` (first 2 letters, word length)
-- **Dismiss the hint** (click X) and the next hint auto-appears in 2 minutes
-- **Click the bee again** while hints are active to stop the cycle
-- **Click any found word** in the word list to open the Word Explorer overlay with definitions and images
+| Action | What happens |
+|--------|-------------|
+| Play the game | Emoji appears on correct/duplicate/error |
+| Click a found word | Word Explorer overlay with definition + image |
+| Press `?` | Toggle hint cycle (e.g. `AM.. 5`) |
+| Click the bee | Opens Spelling Bee Buddy in a new tab |
+| Press `Escape` | Closes any open overlay |
