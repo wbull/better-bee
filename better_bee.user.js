@@ -558,22 +558,27 @@
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
             if (type) showEmoji(EMOJIS[type]);
-            if (type === 'success' && hintActive) {
-              const foundWord = getLastFoundWord();
-              if (currentHintMatches(foundWord)) {
-                // Found the hinted word — show green check, animate out, advance
-                hintToastCheck.classList.add('we-visible');
-                setTimeout(() => {
-                  hintToast.classList.add('we-got-it');
-                  setTimeout(() => {
-                    hideHintToast();
-                    nextHint();
-                  }, 600);
-                }, 400);
-              }
-              // Otherwise: found a different word, leave hint as-is
-            }
           }, 100);
+          // Delay hint check longer so the word list has time to update
+          if (hintActive) {
+            setTimeout(() => {
+              const text = target.textContent?.trim();
+              const type = classifyMessage(text);
+              if (type === 'success') {
+                const foundWord = getLastFoundWord();
+                if (currentHintMatches(foundWord)) {
+                  hintToastCheck.classList.add('we-visible');
+                  setTimeout(() => {
+                    hintToast.classList.add('we-got-it');
+                    setTimeout(() => {
+                      hideHintToast();
+                      nextHint();
+                    }, 600);
+                  }, 400);
+                }
+              }
+            }, 400);
+          }
         }
 
         // Word list: check if new words were added
@@ -638,14 +643,12 @@
   }
 
   function getLastFoundWord() {
-    // Try the input area first (may still contain the accepted word)
-    const input = document.querySelector('.sb-hive-input-content');
-    const inputText = input?.textContent?.trim();
-    if (inputText && /^[a-zA-Z]{4,}$/.test(inputText)) return inputText;
-    // Fall back to most recent word in the word list
-    const items = document.querySelectorAll(
-      '.sb-wordlist-items-pag li, .sb-wordlist-window li, .sb-recent-words li'
-    );
+    // Recent words list shows newest first
+    const recent = document.querySelector('.sb-recent-words li');
+    if (recent) return recent.textContent.trim();
+    // Paginated list is alphabetical — last added is unpredictable,
+    // but grab the last item as a fallback
+    const items = document.querySelectorAll('.sb-wordlist-items-pag li');
     if (items.length > 0) return items[items.length - 1].textContent.trim();
     return '';
   }
