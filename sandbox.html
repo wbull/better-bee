@@ -40,9 +40,13 @@
     box-sizing: border-box;
     transition: background 0.15s ease, color 0.15s ease;
   }
-  /* Filled (prefix) — Spelling Bee gold */
+  /* Filled (prefix typed) — Spelling Bee gold */
   .we-hint-tile.filled {
     color: #000; background: #f8cd05;
+  }
+  /* Hint (prefix placeholder) — gray */
+  .we-hint-tile.hint {
+    color: #999; background: #f0f0f0;
   }
   /* Empty */
   .we-hint-tile.empty {
@@ -55,14 +59,17 @@
 
   /* ─── Size variants ─── */
   .size-sm .we-hint-tile { width: 18px; height: 22px; font-size: 13px; }
+  .size-sm .we-hint-tile.hint { border: 1.5px solid #ccc; }
   .size-sm .we-hint-tile.empty { border: 1.5px solid #ccc; }
   .size-sm .we-hint-tile.typed { border: 1.5px solid #f8cd05; background: #fef9e7; }
 
   .size-md .we-hint-tile { width: 22px; height: 26px; font-size: 15px; }
+  .size-md .we-hint-tile.hint { border: 2px solid #ccc; }
   .size-md .we-hint-tile.empty { border: 2px solid #ccc; }
   .size-md .we-hint-tile.typed { border: 2px solid #f8cd05; background: #fef9e7; }
 
   .size-lg .we-hint-tile { width: 26px; height: 30px; font-size: 17px; }
+  .size-lg .we-hint-tile.hint { border: 2px solid #bbb; }
   .size-lg .we-hint-tile.empty { border: 2px solid #bbb; }
   .size-lg .we-hint-tile.typed { border: 2px solid #f8cd05; background: #fef9e7; }
 
@@ -182,7 +189,7 @@
     const word = container.dataset.word;
     for (let i = 0; i < word.length; i++) {
       const tile = document.createElement('span');
-      tile.className = 'we-hint-tile ' + (i < PREFIX_LEN ? 'filled' : 'empty');
+      tile.className = 'we-hint-tile ' + (i < PREFIX_LEN ? 'hint' : 'empty');
       tile.textContent = i < PREFIX_LEN ? word[i] : '';
       tile.dataset.index = i;
       container.appendChild(tile);
@@ -200,12 +207,15 @@
     document.querySelectorAll('.we-hint-tiles').forEach(container => {
       const word = container.dataset.word;
       const tiles = container.querySelectorAll('.we-hint-tile');
-      for (let i = PREFIX_LEN; i < word.length; i++) {
+      for (let i = 0; i < word.length; i++) {
         const tile = tiles[i];
-        const typedIdx = i - PREFIX_LEN;
-        if (typedIdx < typed.length) {
-          tile.textContent = typed[typedIdx];
-          tile.className = 'we-hint-tile typed';
+        if (i < typed.length) {
+          tile.textContent = typed[i];
+          tile.className = 'we-hint-tile ' + (i < PREFIX_LEN ? 'filled' : 'typed');
+        } else if (i < PREFIX_LEN) {
+          // Restore prefix placeholder
+          tile.textContent = word[i];
+          tile.className = 'we-hint-tile hint';
         } else {
           tile.textContent = '';
           tile.className = 'we-hint-tile empty';

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.23
+// @version      1.24
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -197,6 +197,7 @@
       transition: background 0.15s ease, color 0.15s ease;
     }
     .we-hint-tile.filled { color: #000; background: #f8cd05; }
+    .we-hint-tile.hint { color: #999; background: #f0f0f0; border: 2px solid #ddd; }
     .we-hint-tile.empty { color: transparent; border: 2px solid #ddd; }
     .we-hint-tile.typed { color: #000; border: 2px solid #f8cd05; background: #fef9e7; }
     .we-hint-toast-check {
@@ -647,11 +648,15 @@
       if (hintActive && hintIndex > 0) {
         const tiles = hintTiles.querySelectorAll('.we-hint-tile');
         const input = (text || '').toUpperCase();
-        for (let i = 2; i < tiles.length; i++) {
-          const typedIdx = i - 2;
-          if (typedIdx < input.length) {
-            tiles[i].textContent = input[typedIdx];
-            tiles[i].className = 'we-hint-tile typed';
+        const word = (hintQueue[hintIndex - 1]?.word || '').toUpperCase();
+        for (let i = 0; i < tiles.length; i++) {
+          if (i < input.length) {
+            tiles[i].textContent = input[i];
+            tiles[i].className = 'we-hint-tile ' + (i < 2 ? 'filled' : 'typed');
+          } else if (i < 2) {
+            // Restore prefix placeholder
+            tiles[i].textContent = word[i] || '';
+            tiles[i].className = 'we-hint-tile hint';
           } else {
             tiles[i].textContent = '';
             tiles[i].className = 'we-hint-tile empty';
@@ -792,7 +797,7 @@
     hintTiles.innerHTML = '';
     for (let i = 0; i < word.length; i++) {
       const tile = document.createElement('span');
-      tile.className = 'we-hint-tile ' + (i < 2 ? 'filled' : 'empty');
+      tile.className = 'we-hint-tile ' + (i < 2 ? 'hint' : 'empty');
       tile.textContent = i < 2 ? word[i].toUpperCase() : '';
       hintTiles.appendChild(tile);
     }
