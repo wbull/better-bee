@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.14
+// @version      1.15
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -298,6 +298,7 @@
 
     emojiTimer = setTimeout(() => {
       emojiEl.style.animation = 'none';
+      emojiEl.offsetHeight; // reflow so browser registers animation-cleared state
       emojiEl.style.transition = 'opacity 300ms ease-in, transform 300ms ease-in';
       emojiEl.style.opacity = '0';
       emojiEl.style.transform = 'translateY(-50%) scale(0.5)';
