@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.20
+// @version      1.21
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -164,8 +164,8 @@
 
     /* Hint toast */
     .we-hint-toast {
-      position: fixed; bottom: 20px; left: 20px; z-index: 10001;
-      background: #fff; border-radius: 12px; padding: 16px 20px;
+      position: fixed; bottom: 10px; left: 10px; z-index: 10001;
+      background: #fff; border-radius: 8px; padding: 10px 14px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.25);
       display: flex; flex-direction: column; align-items: stretch;
       transform: translateY(120%) scale(0.8); opacity: 0;
@@ -186,11 +186,11 @@
       display: flex; align-items: center; gap: 8px;
     }
     .we-hint-toast-text {
-      font-size: 20px; font-weight: 700; letter-spacing: 2px; line-height: 1.3;
+      font-size: 14px; font-weight: 700; letter-spacing: 1px; line-height: 1.3;
       font-family: monospace; word-wrap: break-word;
     }
     .we-hint-toast-check {
-      font-size: 24px; line-height: 1;
+      font-size: 16px; line-height: 1;
       opacity: 0; transform: scale(0);
       transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
@@ -204,8 +204,8 @@
       border-top: 1px solid transparent;
     }
     .we-hint-toast.we-expanded .we-hint-toast-clue {
-      max-height: 200px; opacity: 1; margin-top: 10px;
-      border-top-color: #e0e0e0; padding-top: 10px;
+      max-height: 200px; opacity: 1; margin-top: 6px;
+      border-top-color: #e0e0e0; padding-top: 6px;
     }
     .we-hint-toast-credit {
       display: block; font-size: 11px; font-style: italic;
