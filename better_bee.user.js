@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.15
+// @version      1.16
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -19,7 +19,11 @@
   'use strict';
 
   // ─── Shared: Constants & State ──────────────────────────────────────
-  const EMOJIS = { success: '\u2705', duplicate: '\u261D\uFE0F', error: '\u274C' };
+  const EMOJIS = {
+    success: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/2705.svg',
+    duplicate: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/261d.svg',
+    error: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/274c.svg',
+  };
   const MIN_WORD_LENGTH = 4; // Spelling Bee words are 4+ letters
   const apiCache = new Map();
   let requestCounter = 0;
@@ -260,19 +264,20 @@
   setTimeout(() => clearInterval(interstitialTimer), 10000);
 
   // ─── Module 3: Visual Feedback Emojis ──────────────────────────────
-  const emojiEl = document.createElement('div');
+  const emojiEl = document.createElement('img');
   Object.assign(emojiEl.style, {
     position: 'fixed',
     top: '50%',
     right: '5%',
     transform: 'translateY(-50%) scale(0)',
-    fontSize: '25vw',
-    lineHeight: '1',
+    width: '25vw',
+    height: '25vw',
     pointerEvents: 'none',
     zIndex: '9999',
     opacity: '0',
     transition: 'none',
   });
+  emojiEl.alt = '';
   document.body.appendChild(emojiEl);
 
   let emojiTimer = null;
@@ -284,7 +289,7 @@
     emojiEl.style.opacity = '0';
     emojiEl.style.transform = 'translateY(-50%) scale(0)';
     emojiEl.style.transformOrigin = '';
-    emojiEl.textContent = emoji;
+    emojiEl.src = emoji;
     emojiEl.offsetHeight; // reflow
 
     emojiEl.style.transition = 'opacity 150ms ease-out, transform 150ms ease-out';
