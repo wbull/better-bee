@@ -20,6 +20,7 @@
 
   // ─── Shared: Constants & State ──────────────────────────────────────
   const EMOJIS = { success: '\u2705', duplicate: '\uD83D\uDD95', error: '\u274C' };
+  const MIN_WORD_LENGTH = 4; // Spelling Bee words are 4+ letters
   const apiCache = new Map();
   let requestCounter = 0;
 
@@ -508,7 +509,7 @@
 
         // Find the text node or inner element with the word
         const wordText = li.textContent.trim().toLowerCase();
-        if (!wordText || wordText.length < 4) return; // SB words are 4+ letters
+        if (!wordText || wordText.length < MIN_WORD_LENGTH) return;
 
         li.classList.add('we-word');
         li.setAttribute('role', 'button');
@@ -541,10 +542,12 @@
 
   // ─── Track input so we have the word even after NYT clears it ──────
   let lastInputText = '';
+  let inputObserverAttached = false;
   function hookInputObserver() {
+    if (inputObserverAttached) return;
     const el = document.querySelector('.sb-hive-input-content');
-    if (!el || el.dataset.weObserved) return;
-    el.dataset.weObserved = '1';
+    if (!el) return;
+    inputObserverAttached = true;
     new MutationObserver(() => {
       const text = el.textContent?.trim();
       if (text) lastInputText = text;
@@ -572,7 +575,7 @@
           // Use tracked input (reliable) with direct read as fallback
           const input = document.querySelector('.sb-hive-input-content');
           const directRead = input?.textContent?.trim() || '';
-          const capturedWord = directRead.length >= 4 ? directRead : lastInputText;
+          const capturedWord = directRead.length >= MIN_WORD_LENGTH ? directRead : lastInputText;
           setTimeout(() => {
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
@@ -655,17 +658,6 @@
     const len = parseInt(hint.split(' ').pop(), 10);
     const upper = word.toUpperCase();
     return upper.length === len && upper.startsWith(prefix);
-  }
-
-  function getLastFoundWord() {
-    // Recent words list shows newest first
-    const recent = document.querySelector('.sb-recent-words li');
-    if (recent) return recent.textContent.trim();
-    // Paginated list is alphabetical — last added is unpredictable,
-    // but grab the last item as a fallback
-    const items = document.querySelectorAll('.sb-wordlist-items-pag li');
-    if (items.length > 0) return items[items.length - 1].textContent.trim();
-    return '';
   }
 
   function buildHintQueue() {
