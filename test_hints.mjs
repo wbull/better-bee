@@ -18,9 +18,12 @@ function classifyMessage(text) {
 
 function currentHintMatches(word, hintQueue, hintIndex) {
   if (!word || hintIndex === 0 || hintIndex > hintQueue.length) return false;
-  const hint = hintQueue[hintIndex - 1]; // e.g. "BA.. 5"
-  const prefix = hint.slice(0, 2);
-  const len = parseInt(hint.split(' ').pop(), 10);
+  const entry = hintQueue[hintIndex - 1];
+  // Exact word match (more reliable)
+  if (entry.word && word.toLowerCase() === entry.word) return true;
+  // Fallback: prefix + length match
+  const prefix = entry.hint.slice(0, 2);
+  const len = parseInt(entry.hint.split(' ').pop(), 10);
   const upper = word.toUpperCase();
   return upper.length === len && upper.startsWith(prefix);
 }
@@ -75,22 +78,23 @@ test('returns null for empty string', () => {
 // --- currentHintMatches ---
 console.log('\ncurrentHintMatches:');
 
-const queue = ['BA.. 5', 'CR.. 7', 'AM.. 4'];
+const queue = [
+  { word: 'batch', hint: 'BA.. 5' },
+  { word: 'crackle', hint: 'CR.. 7' },
+  { word: 'ambl', hint: 'AM.. 4' },
+];
 
-test('matches correct word for hint "BA.. 5"', () => {
+test('matches correct word via exact word match', () => {
   assert.strictEqual(currentHintMatches('batch', queue, 1), true);
 });
-test('rejects wrong length', () => {
-  assert.strictEqual(currentHintMatches('bat', queue, 1), false);
+test('matches via exact word match (case insensitive)', () => {
+  assert.strictEqual(currentHintMatches('BATCH', queue, 1), true);
 });
-test('rejects wrong prefix', () => {
+test('rejects wrong word entirely', () => {
   assert.strictEqual(currentHintMatches('catch', queue, 1), false);
 });
-test('matches "CR.. 7" with "crackle"', () => {
+test('matches "crackle" for second entry', () => {
   assert.strictEqual(currentHintMatches('crackle', queue, 2), true);
-});
-test('is case insensitive', () => {
-  assert.strictEqual(currentHintMatches('BATCH', queue, 1), true);
 });
 test('returns false when hintIndex is 0', () => {
   assert.strictEqual(currentHintMatches('batch', queue, 0), false);
@@ -100,6 +104,24 @@ test('returns false for empty word', () => {
 });
 test('returns false when hintIndex exceeds queue', () => {
   assert.strictEqual(currentHintMatches('batch', queue, 5), false);
+});
+
+// Fallback prefix+length tests (entry without word field)
+console.log('\ncurrentHintMatches (prefix+length fallback):');
+
+const fallbackQueue = [
+  { hint: 'BA.. 5' },
+  { hint: 'CR.. 7' },
+];
+
+test('fallback matches prefix+length when no word field', () => {
+  assert.strictEqual(currentHintMatches('batch', fallbackQueue, 1), true);
+});
+test('fallback rejects wrong length', () => {
+  assert.strictEqual(currentHintMatches('bat', fallbackQueue, 1), false);
+});
+test('fallback rejects wrong prefix', () => {
+  assert.strictEqual(currentHintMatches('catch', fallbackQueue, 1), false);
 });
 
 // --- getLastFoundWord (DOM) ---
@@ -136,25 +158,22 @@ test('trims whitespace from word', () => {
 console.log('\nIntegration (captured input + hint match):');
 
 test('captured input matches hint on success', () => {
-  // Simulates: user typed "colic", input observer stored it,
-  // then success message fires and we check the captured word
   const capturedWord = 'colic';
   const type = classifyMessage('Nice!');
   assert.strictEqual(type, 'success');
-  assert.strictEqual(currentHintMatches(capturedWord, ['CO.. 5'], 1), true);
+  assert.strictEqual(currentHintMatches(capturedWord, [{ word: 'colic', hint: 'CO.. 5' }], 1), true);
 });
 
 test('captured input does not match different hint', () => {
   const capturedWord = 'colic';
   const type = classifyMessage('Great!');
   assert.strictEqual(type, 'success');
-  assert.strictEqual(currentHintMatches(capturedWord, ['BA.. 5'], 1), false);
+  assert.strictEqual(currentHintMatches(capturedWord, [{ word: 'batch', hint: 'BA.. 5' }], 1), false);
 });
 
 test('captured input works even when DOM has no words yet', () => {
-  // The key insight: we don't need to read the DOM at all anymore
   const capturedWord = 'batch';
-  assert.strictEqual(currentHintMatches(capturedWord, ['BA.. 5'], 1), true);
+  assert.strictEqual(currentHintMatches(capturedWord, [{ word: 'batch', hint: 'BA.. 5' }], 1), true);
 });
 
 // --- getLastFoundWord still works as fallback ---
@@ -166,7 +185,7 @@ test('full flow via DOM: recent words list', () => {
   `);
   const word = getLastFoundWord(dom.window.document);
   assert.strictEqual(word, 'batch');
-  assert.strictEqual(currentHintMatches(word, ['BA.. 5'], 1), true);
+  assert.strictEqual(currentHintMatches(word, [{ word: 'batch', hint: 'BA.. 5' }], 1), true);
 });
 
 // --- Summary ---

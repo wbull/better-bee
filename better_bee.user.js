@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.18
+// @version      1.19
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -13,6 +13,7 @@
 // @grant        unsafeWindow
 // @connect      api.dictionaryapi.dev
 // @connect      en.wikipedia.org
+// @connect      static01.nyt.com
 // ==/UserScript==
 
 (function () {
@@ -165,7 +166,7 @@
     .we-hint-toast {
       position: fixed; bottom: 20px; left: 20px; z-index: 10001;
       background: #fff; border-radius: 12px; padding: 16px 20px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25); font-family: monospace;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25); font-family: monospace; max-width: 360px;
       display: flex; align-items: center; gap: 12px;
       transform: translateY(120%) scale(0.8); opacity: 0;
       transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
@@ -181,7 +182,7 @@
       30% { transform: translateY(0) scale(1.08); }
       100% { transform: translateY(-20px) scale(0.9); opacity: 0; }
     }
-    .we-hint-toast-text { font-size: 28px; font-weight: 700; letter-spacing: 2px; }
+    .we-hint-toast-text { font-size: 28px; font-weight: 700; letter-spacing: 2px; line-height: 1.3; word-wrap: break-word; }
     .we-hint-toast-check {
       font-size: 32px; line-height: 1;
       opacity: 0; transform: scale(0);
@@ -193,6 +194,27 @@
     @keyframes bee-pulse {
       0%, 100% { filter: drop-shadow(0 0 0 transparent); }
       50% { filter: drop-shadow(0 0 8px #f8cd05); }
+    }
+    /* Bee badge for Level 2 clues */
+    .we-hint-badge {
+      position: absolute; top: -4px; right: -8px;
+      background: #f8cd05; color: #222; font-size: 10px; font-weight: 700;
+      padding: 2px 5px; border-radius: 8px; line-height: 1;
+      animation: badge-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+    @keyframes badge-pop {
+      0% { transform: scale(0); }
+      100% { transform: scale(1); }
+    }
+    /* Level 2 clue toast: smaller text for longer clues */
+    .we-hint-toast.we-hint-level2 .we-hint-toast-text {
+      font-size: 16px; font-weight: 400; letter-spacing: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .we-hint-toast-credit {
+      display: block; font-size: 11px; font-style: italic;
+      color: #888; margin-top: 4px;
     }
     @keyframes finger-wag {
       0%, 100% { transform: translateY(-50%) rotate(0deg); }
@@ -221,6 +243,14 @@
   // ─── Guard: Only run modules 2+ on Spelling Bee page ───────────────
   if (!location.pathname.includes('/puzzles/spelling-bee')) return;
 
+  // ─── Hint State (hoisted for bee click handler access) ────────────
+  let hintActive = false;
+  let hintQueue = [];
+  let hintIndex = 0;
+  let hintDismissing = false;
+  let hintLevel = 1;        // 1 = prefix+length, 2 = community clue
+  let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
+
   // ─── Module 2: Bee Buddy Button ───────────────────────────────────
   if (!document.getElementById('bee-buddy')) {
     const bee = document.createElement('div');
@@ -240,12 +270,18 @@
       user-select: none;
     `;
 
-    function goToBeeBuddy() {
-      window.open('https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html', '_blank');
+    function handleBeeClick() {
+      if (hintActive) {
+        hintLevel = hintLevel === 1 ? 2 : 1;
+        updateBeeBadge(bee);
+        showCurrentHint();
+      } else {
+        window.open('https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html', '_blank');
+      }
     }
-    bee.addEventListener('click', goToBeeBuddy);
+    bee.addEventListener('click', handleBeeClick);
     bee.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToBeeBuddy(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBeeClick(); }
     });
 
     document.body.appendChild(bee);
@@ -425,6 +461,19 @@
     return gmFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(word)}`);
   }
 
+  async function fetchClues() {
+    if (clueCache) return clueCache;
+    try {
+      const puzzleId = unsafeWindow.gameData.today.id;
+      const url = `https://static01.nyt.com/newsgraphics/2023-01-18-spelling-bee-buddy/clues/${puzzleId}.json`;
+      const data = await fetch(url).then(r => r.ok ? r.json() : null);
+      if (data && Array.isArray(data)) {
+        clueCache = new Map(data.map(c => [c.word, c]));
+      }
+    } catch { /* silent fail — Level 2 will show fallback */ }
+    return clueCache;
+  }
+
   function buildPanelContent(word, dictResult, wikiResult) {
     let html = '';
 
@@ -581,7 +630,6 @@
   hookInputObserver();
 
   // ─── Shared MutationObserver (emoji feedback + word list) ───────────
-  let hintDismissing = false; // guard against duplicate dismiss animations
   const mainObserver = new MutationObserver(mutations => {
     let shouldProcessWords = false;
     hookInputObserver(); // retry if element wasn't ready at script init
@@ -634,9 +682,6 @@
   mainObserver.observe(document.body, { childList: true, subtree: true });
 
   // ─── Module 5: Hint System ───────────────────────────────────────────
-  let hintActive = false;
-  let hintQueue = [];
-  let hintIndex = 0;
 
   // Create hint toast element
   const hintToast = document.createElement('div');
@@ -673,9 +718,12 @@
 
   function currentHintMatches(word) {
     if (!word || hintIndex === 0 || hintIndex > hintQueue.length) return false;
-    const hint = hintQueue[hintIndex - 1]; // e.g. "BA.. 5"
-    const prefix = hint.slice(0, 2);
-    const len = parseInt(hint.split(' ').pop(), 10);
+    const entry = hintQueue[hintIndex - 1];
+    // Exact word match (more reliable)
+    if (entry.word && word.toLowerCase() === entry.word) return true;
+    // Fallback: prefix + length match
+    const prefix = entry.hint.slice(0, 2);
+    const len = parseInt(entry.hint.split(' ').pop(), 10);
     const upper = word.toUpperCase();
     return upper.length === len && upper.startsWith(prefix);
   }
@@ -687,11 +735,11 @@
     const remaining = answers.filter(w => !found.has(w.toLowerCase()));
     if (remaining.length === 0) return [];
 
-    // Build hints: first 2 letters + ".." + space + length
-    const hints = remaining.map(w => {
-      const upper = w.toUpperCase();
-      return upper.slice(0, 2) + '.. ' + w.length;
-    });
+    // Build hints: objects with word + display hint
+    const hints = remaining.map(w => ({
+      word: w.toLowerCase(),
+      hint: w.toUpperCase().slice(0, 2) + '.. ' + w.length,
+    }));
 
     // Shuffle (Fisher-Yates)
     for (let i = hints.length - 1; i > 0; i--) {
@@ -701,8 +749,19 @@
     return hints;
   }
 
-  function showHintToast(text) {
+  function showHintToast(text, credit) {
     hintToastText.textContent = text;
+    // Remove old credit if any
+    const oldCredit = hintToast.querySelector('.we-hint-toast-credit');
+    if (oldCredit) oldCredit.remove();
+    // Add credit line for Level 2
+    if (credit) {
+      const span = document.createElement('span');
+      span.className = 'we-hint-toast-credit';
+      span.textContent = `Clue by ${credit}`;
+      hintToastText.appendChild(span);
+    }
+    hintToast.classList.toggle('we-hint-level2', hintLevel === 2);
     hintToastCheck.classList.remove('we-visible');
     hintToast.classList.remove('we-got-it', 'we-visible');
     hintToast.offsetHeight; // reflow
@@ -710,8 +769,46 @@
   }
 
   function hideHintToast() {
-    hintToast.classList.remove('we-visible', 'we-got-it');
+    hintToast.classList.remove('we-visible', 'we-got-it', 'we-hint-level2');
     hintToastCheck.classList.remove('we-visible');
+  }
+
+  async function showCurrentHint() {
+    if (!hintActive || hintIndex === 0 || hintIndex > hintQueue.length) return;
+    const entry = hintQueue[hintIndex - 1];
+    if (hintLevel === 1) {
+      showHintToast(entry.hint);
+      return;
+    }
+    // Level 2: community clue
+    const clues = await fetchClues();
+    // Guard: user may have toggled/stopped during await
+    if (!hintActive || hintQueue[hintIndex - 1] !== entry) return;
+    const clue = clues?.get(entry.word);
+    if (clue?.text) {
+      showHintToast(`\u201C${clue.text}\u201D`, clue.user);
+    } else {
+      showHintToast(entry.hint + ' (no clue)');
+    }
+  }
+
+  function updateBeeBadge(bee) {
+    if (!bee) bee = document.getElementById('bee-buddy');
+    if (!bee) return;
+    const existing = bee.querySelector('.we-hint-badge');
+    if (hintActive && hintLevel === 2) {
+      if (!existing) {
+        bee.style.position = bee.style.position || 'fixed';
+        const badge = document.createElement('span');
+        badge.className = 'we-hint-badge';
+        badge.textContent = 'clue';
+        bee.appendChild(badge);
+      }
+      bee.setAttribute('aria-label', 'Switch to letter hints');
+    } else {
+      if (existing) existing.remove();
+      bee.setAttribute('aria-label', hintActive ? 'Switch to community clues' : 'Open Spelling Bee Buddy');
+    }
   }
 
   function nextHint() {
@@ -734,8 +831,8 @@
       }
     }
 
-    showHintToast(hintQueue[hintIndex]);
     hintIndex++;
+    showCurrentHint();
   }
 
   function startHints() {
@@ -754,16 +851,21 @@
     }
 
     hintActive = true;
+    hintLevel = 1;
     const bee = document.getElementById('bee-buddy');
     if (bee) bee.classList.add('we-hinting');
+    updateBeeBadge(bee);
+    fetchClues(); // pre-fetch in background
     nextHint();
   }
 
   function stopHints() {
     hintActive = false;
+    hintLevel = 1;
     hideHintToast();
     const bee = document.getElementById('bee-buddy');
     if (bee) bee.classList.remove('we-hinting');
+    updateBeeBadge(bee);
   }
 
   // Keyboard shortcut: ? to toggle hints

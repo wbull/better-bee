@@ -25,11 +25,11 @@ function buildHintQueue(getAnswersFn, getFoundWordsFn) {
   const remaining = answers.filter(w => !found.has(w.toLowerCase()));
   if (remaining.length === 0) return [];
 
-  // Build hints: first 2 letters + ".." + space + length
-  const hints = remaining.map(w => {
-    const upper = w.toUpperCase();
-    return upper.slice(0, 2) + '.. ' + w.length;
-  });
+  // Build hints: objects with word + display hint
+  const hints = remaining.map(w => ({
+    word: w.toLowerCase(),
+    hint: w.toUpperCase().slice(0, 2) + '.. ' + w.length,
+  }));
 
   return hints;
 }
@@ -49,12 +49,13 @@ test('Returns [] when all words found', () => {
   assert.deepStrictEqual(result, []);
 });
 
-test('Correct hint format "XX.. N"', () => {
+test('Correct hint format {word, hint}', () => {
   const result = buildHintQueue(
     () => ['batch'],
     () => new Set()
   );
-  assert.strictEqual(result[0], 'BA.. 5');
+  assert.strictEqual(result[0].hint, 'BA.. 5');
+  assert.strictEqual(result[0].word, 'batch');
 });
 
 test('Excludes already-found words', () => {
@@ -64,7 +65,7 @@ test('Excludes already-found words', () => {
   );
   assert.strictEqual(result.length, 2);
   // Should not contain hint for 'batch'
-  assert.ok(!result.some(h => h.startsWith('BA')));
+  assert.ok(!result.some(h => h.word === 'batch'));
 });
 
 test('All hints match regex ^[A-Z]{2}\\.\\.\\s\\d+$', () => {
@@ -73,8 +74,8 @@ test('All hints match regex ^[A-Z]{2}\\.\\.\\s\\d+$', () => {
     () => new Set()
   );
   const pattern = /^[A-Z]{2}\.\. \d+$/;
-  for (const hint of result) {
-    assert.ok(pattern.test(hint), `"${hint}" doesn't match pattern`);
+  for (const entry of result) {
+    assert.ok(pattern.test(entry.hint), `"${entry.hint}" doesn't match pattern`);
   }
 });
 
@@ -84,6 +85,15 @@ test('Queue length = answers.length - found.length', () => {
     () => new Set(['batch', 'amble'])
   );
   assert.strictEqual(result.length, 2);
+});
+
+test('word field is lowercase', () => {
+  const result = buildHintQueue(
+    () => ['BATCH', 'Crackle'],
+    () => new Set()
+  );
+  assert.strictEqual(result[0].word, 'batch');
+  assert.strictEqual(result[1].word, 'crackle');
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
