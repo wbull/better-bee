@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.11
+// @version      1.12
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -240,14 +240,15 @@
   }
 
   // ─── Auto-dismiss Play/Resume interstitials ─────────────────────────
-  // Poll briefly on load: click the button if present, otherwise remove the
-  // splash container entirely (the large yellow screen has no dismiss button)
+  // NYT shows a yellow loading screen (#js-hook-pz-moment__loading) and/or
+  // a Play/Resume modal. Poll and remove whatever we find.
   const interstitialTimer = setInterval(() => {
     const btn = document.querySelector('button.pz-moment__button.primary')
              || document.querySelector('.pz-moment__close');
-    if (btn) { btn.click(); clearInterval(interstitialTimer); return; }
-    const splash = document.querySelector('.pz-moment');
-    if (splash) { splash.remove(); clearInterval(interstitialTimer); }
+    if (btn) btn.click();
+    const splash = document.querySelector('#js-hook-pz-moment__loading, .pz-moment');
+    if (splash) splash.remove();
+    if (btn || splash) clearInterval(interstitialTimer);
   }, 200);
   setTimeout(() => clearInterval(interstitialTimer), 10000);
 
