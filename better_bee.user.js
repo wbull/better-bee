@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.21
+// @version      1.22
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -168,6 +168,7 @@
       background: #fff; border-radius: 8px; padding: 10px 14px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.25);
       display: flex; flex-direction: column; align-items: stretch;
+      width: fit-content; max-width: 320px;
       transform: translateY(120%) scale(0.8); opacity: 0;
       transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
     }
@@ -184,6 +185,7 @@
     }
     .we-hint-toast-header {
       display: flex; align-items: center; gap: 8px;
+      align-self: flex-start;
     }
     .we-hint-toast-text {
       font-size: 14px; font-weight: 700; letter-spacing: 1px; line-height: 1.3;
