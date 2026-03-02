@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.10
+// @version      1.11
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -240,13 +240,15 @@
   }
 
   // ─── Auto-dismiss Play/Resume interstitials ─────────────────────────
-  // Poll briefly on load to click the "Play"/"Resume" button as soon as it appears
+  // Poll briefly on load: click the button if present, otherwise remove the
+  // splash container entirely (the large yellow screen has no dismiss button)
   const interstitialTimer = setInterval(() => {
     const btn = document.querySelector('button.pz-moment__button.primary')
              || document.querySelector('.pz-moment__close');
-    if (btn) { btn.click(); clearInterval(interstitialTimer); }
+    if (btn) { btn.click(); clearInterval(interstitialTimer); return; }
+    const splash = document.querySelector('.pz-moment');
+    if (splash) { splash.remove(); clearInterval(interstitialTimer); }
   }, 200);
-  // Stop trying after 10 seconds
   setTimeout(() => clearInterval(interstitialTimer), 10000);
 
   // ─── Module 3: Visual Feedback Emojis ──────────────────────────────
