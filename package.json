@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test": "node test_hints.mjs && node test_pure_edge_cases.mjs && node test_build_hint_queue.mjs && node test_build_panel_content.mjs && node test_dom_functions.mjs && node test_next_hint.mjs"
+  },
   "devDependencies": {
     "jsdom": "^28.1.0"
   }
