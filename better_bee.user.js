@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.19
+// @version      1.20
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -166,8 +166,8 @@
     .we-hint-toast {
       position: fixed; bottom: 20px; left: 20px; z-index: 10001;
       background: #fff; border-radius: 12px; padding: 16px 20px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25); font-family: monospace; max-width: 360px;
-      display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      display: flex; flex-direction: column; align-items: stretch;
       transform: translateY(120%) scale(0.8); opacity: 0;
       transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
     }
@@ -182,39 +182,40 @@
       30% { transform: translateY(0) scale(1.08); }
       100% { transform: translateY(-20px) scale(0.9); opacity: 0; }
     }
-    .we-hint-toast-text { font-size: 28px; font-weight: 700; letter-spacing: 2px; line-height: 1.3; word-wrap: break-word; }
+    .we-hint-toast-header {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .we-hint-toast-text {
+      font-size: 20px; font-weight: 700; letter-spacing: 2px; line-height: 1.3;
+      font-family: monospace; word-wrap: break-word;
+    }
     .we-hint-toast-check {
-      font-size: 32px; line-height: 1;
+      font-size: 24px; line-height: 1;
       opacity: 0; transform: scale(0);
       transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     .we-hint-toast-check.we-visible { opacity: 1; transform: scale(1); }
+    .we-hint-toast-clue {
+      max-height: 0; opacity: 0; overflow: hidden;
+      transition: max-height 0.3s ease, opacity 0.3s ease, margin-top 0.3s ease;
+      font-size: 15px; font-weight: 400; line-height: 1.4;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #333; margin-top: 0; word-wrap: break-word;
+      border-top: 1px solid transparent;
+    }
+    .we-hint-toast.we-expanded .we-hint-toast-clue {
+      max-height: 200px; opacity: 1; margin-top: 10px;
+      border-top-color: #e0e0e0; padding-top: 10px;
+    }
+    .we-hint-toast-credit {
+      display: block; font-size: 11px; font-style: italic;
+      color: #888; margin-top: 4px;
+    }
     /* Bee pulse when hinting */
     #bee-buddy.we-hinting { animation: bee-pulse 1.5s ease-in-out infinite; }
     @keyframes bee-pulse {
       0%, 100% { filter: drop-shadow(0 0 0 transparent); }
       50% { filter: drop-shadow(0 0 8px #f8cd05); }
-    }
-    /* Bee badge for Level 2 clues */
-    .we-hint-badge {
-      position: absolute; top: -4px; right: -8px;
-      background: #f8cd05; color: #222; font-size: 10px; font-weight: 700;
-      padding: 2px 5px; border-radius: 8px; line-height: 1;
-      animation: badge-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      pointer-events: none;
-    }
-    @keyframes badge-pop {
-      0% { transform: scale(0); }
-      100% { transform: scale(1); }
-    }
-    /* Level 2 clue toast: smaller text for longer clues */
-    .we-hint-toast.we-hint-level2 .we-hint-toast-text {
-      font-size: 16px; font-weight: 400; letter-spacing: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    }
-    .we-hint-toast-credit {
-      display: block; font-size: 11px; font-style: italic;
-      color: #888; margin-top: 4px;
     }
     @keyframes finger-wag {
       0%, 100% { transform: translateY(-50%) rotate(0deg); }
@@ -248,7 +249,7 @@
   let hintQueue = [];
   let hintIndex = 0;
   let hintDismissing = false;
-  let hintLevel = 1;        // 1 = prefix+length, 2 = community clue
+  let hintExpanded = false;   // true when clue row is visible
   let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
 
   // ─── Module 2: Bee Buddy Button ───────────────────────────────────
@@ -270,18 +271,14 @@
       user-select: none;
     `;
 
-    function handleBeeClick() {
-      if (hintActive) {
-        hintLevel = hintLevel === 1 ? 2 : 1;
-        updateBeeBadge(bee);
-        showCurrentHint();
-      } else {
+    function goToBeeBuddy() {
+      if (!hintActive) {
         window.open('https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html', '_blank');
       }
     }
-    bee.addEventListener('click', handleBeeClick);
+    bee.addEventListener('click', goToBeeBuddy);
     bee.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleBeeClick(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToBeeBuddy(); }
     });
 
     document.body.appendChild(bee);
@@ -404,6 +401,12 @@
   });
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
+    // Dismiss hints first
+    if (hintActive) {
+      e.preventDefault();
+      stopHints();
+      return;
+    }
     // Close our Word Explorer overlay first
     if (overlay.style.display !== 'none') {
       e.preventDefault();
@@ -686,11 +689,17 @@
   // Create hint toast element
   const hintToast = document.createElement('div');
   hintToast.className = 'we-hint-toast';
-  hintToast.innerHTML = '<span class="we-hint-toast-text"></span><span class="we-hint-toast-check">\u2705</span>';
+  hintToast.innerHTML = `
+    <div class="we-hint-toast-header">
+      <span class="we-hint-toast-text"></span>
+      <span class="we-hint-toast-check">\u2705</span>
+    </div>
+    <div class="we-hint-toast-clue"></div>`;
   document.body.appendChild(hintToast);
 
   const hintToastText = hintToast.querySelector('.we-hint-toast-text');
   const hintToastCheck = hintToast.querySelector('.we-hint-toast-check');
+  const hintToastClue = hintToast.querySelector('.we-hint-toast-clue');
 
   function getAnswers() {
     try {
@@ -749,19 +758,12 @@
     return hints;
   }
 
-  function showHintToast(text, credit) {
+  function showHintToast(text) {
     hintToastText.textContent = text;
-    // Remove old credit if any
-    const oldCredit = hintToast.querySelector('.we-hint-toast-credit');
-    if (oldCredit) oldCredit.remove();
-    // Add credit line for Level 2
-    if (credit) {
-      const span = document.createElement('span');
-      span.className = 'we-hint-toast-credit';
-      span.textContent = `Clue by ${credit}`;
-      hintToastText.appendChild(span);
-    }
-    hintToast.classList.toggle('we-hint-level2', hintLevel === 2);
+    hintToastClue.textContent = '';
+    hintToastClue.innerHTML = '';
+    hintToast.classList.remove('we-expanded');
+    hintExpanded = false;
     hintToastCheck.classList.remove('we-visible');
     hintToast.classList.remove('we-got-it', 'we-visible');
     hintToast.offsetHeight; // reflow
@@ -769,46 +771,37 @@
   }
 
   function hideHintToast() {
-    hintToast.classList.remove('we-visible', 'we-got-it', 'we-hint-level2');
+    hintToast.classList.remove('we-visible', 'we-got-it', 'we-expanded');
     hintToastCheck.classList.remove('we-visible');
   }
 
-  async function showCurrentHint() {
+  async function expandHint() {
     if (!hintActive || hintIndex === 0 || hintIndex > hintQueue.length) return;
     const entry = hintQueue[hintIndex - 1];
-    if (hintLevel === 1) {
-      showHintToast(entry.hint);
-      return;
-    }
-    // Level 2: community clue
     const clues = await fetchClues();
-    // Guard: user may have toggled/stopped during await
     if (!hintActive || hintQueue[hintIndex - 1] !== entry) return;
     const clue = clues?.get(entry.word);
     if (clue?.text) {
-      showHintToast(`\u201C${clue.text}\u201D`, clue.user);
+      hintToastClue.textContent = '';
+      const q = document.createElement('span');
+      q.textContent = `\u201C${clue.text}\u201D`;
+      hintToastClue.appendChild(q);
+      if (clue.user) {
+        const cr = document.createElement('span');
+        cr.className = 'we-hint-toast-credit';
+        cr.textContent = `Clue by ${clue.user}`;
+        hintToastClue.appendChild(cr);
+      }
     } else {
-      showHintToast(entry.hint + ' (no clue)');
+      hintToastClue.textContent = '(no clue available)';
     }
+    hintExpanded = true;
+    hintToast.classList.add('we-expanded');
   }
 
-  function updateBeeBadge(bee) {
-    if (!bee) bee = document.getElementById('bee-buddy');
-    if (!bee) return;
-    const existing = bee.querySelector('.we-hint-badge');
-    if (hintActive && hintLevel === 2) {
-      if (!existing) {
-        bee.style.position = bee.style.position || 'fixed';
-        const badge = document.createElement('span');
-        badge.className = 'we-hint-badge';
-        badge.textContent = 'clue';
-        bee.appendChild(badge);
-      }
-      bee.setAttribute('aria-label', 'Switch to letter hints');
-    } else {
-      if (existing) existing.remove();
-      bee.setAttribute('aria-label', hintActive ? 'Switch to community clues' : 'Open Spelling Bee Buddy');
-    }
+  function collapseHint() {
+    hintExpanded = false;
+    hintToast.classList.remove('we-expanded');
   }
 
   function nextHint() {
@@ -832,7 +825,8 @@
     }
 
     hintIndex++;
-    showCurrentHint();
+    const entry = hintQueue[hintIndex - 1];
+    showHintToast(entry.hint);
   }
 
   function startHints() {
@@ -851,28 +845,31 @@
     }
 
     hintActive = true;
-    hintLevel = 1;
+    hintExpanded = false;
     const bee = document.getElementById('bee-buddy');
     if (bee) bee.classList.add('we-hinting');
-    updateBeeBadge(bee);
     fetchClues(); // pre-fetch in background
     nextHint();
   }
 
   function stopHints() {
     hintActive = false;
-    hintLevel = 1;
+    hintExpanded = false;
     hideHintToast();
     const bee = document.getElementById('bee-buddy');
     if (bee) bee.classList.remove('we-hinting');
-    updateBeeBadge(bee);
   }
 
-  // Keyboard shortcut: ? to toggle hints
+  // Keyboard shortcuts: ? = start/next hint, . = expand/collapse clue
   document.addEventListener('keydown', e => {
-    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    if (e.key === '?') {
       e.preventDefault();
-      hintActive ? stopHints() : startHints();
+      if (!hintActive) { startHints(); }
+      else { nextHint(); }
+    } else if (e.key === '.' && hintActive) {
+      e.preventDefault();
+      hintExpanded ? collapseHint() : expandHint();
     }
   });
 

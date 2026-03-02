@@ -15,9 +15,8 @@ function test(name, fn) {
   }
 }
 
-// nextHint now delegates to showCurrentHint, which reads hintQueue[hintIndex - 1].
-// For testing, we capture that the index advances and showCurrentHint is called.
-function nextHint(state, buildHintQueueFn, showCurrentHintFn, showHintToastFn, stopHintsFn) {
+// nextHint now calls showHintToastFn(entry.hint) directly (always compact).
+function nextHint(state, buildHintQueueFn, showHintToastFn, stopHintsFn) {
   if (!state.hintActive) return;
 
   // If queue exhausted, rebuild
@@ -38,7 +37,8 @@ function nextHint(state, buildHintQueueFn, showCurrentHintFn, showHintToastFn, s
   }
 
   state.hintIndex++;
-  showCurrentHintFn();
+  const entry = state.hintQueue[state.hintIndex - 1];
+  showHintToastFn(entry.hint);
 }
 
 console.log('\nnextHint:');
@@ -48,42 +48,42 @@ const makeQueue = (...words) => words.map(w => ({ word: w.toLowerCase(), hint: w
 test('advances hintIndex on each call', () => {
   const shown = [];
   const state = { hintActive: true, hintQueue: makeQueue('batch', 'crackle', 'amble'), hintIndex: 0 };
-  nextHint(state, () => null, () => shown.push('current'), (t) => shown.push(t), () => {});
+  nextHint(state, () => null, (t) => shown.push(t), () => {});
   assert.strictEqual(state.hintIndex, 1);
-  nextHint(state, () => null, () => shown.push('current'), (t) => shown.push(t), () => {});
+  nextHint(state, () => null, (t) => shown.push(t), () => {});
   assert.strictEqual(state.hintIndex, 2);
 });
 
-test('calls showCurrentHint (not showHintToast directly)', () => {
+test('calls showHintToast with the hint string', () => {
   const shown = [];
   const state = { hintActive: true, hintQueue: makeQueue('batch', 'crackle'), hintIndex: 0 };
-  nextHint(state, () => null, () => shown.push('showCurrentHint'), (t) => shown.push(t), () => {});
-  assert.strictEqual(shown[0], 'showCurrentHint');
-  nextHint(state, () => null, () => shown.push('showCurrentHint'), (t) => shown.push(t), () => {});
-  assert.strictEqual(shown[1], 'showCurrentHint');
+  nextHint(state, () => null, (t) => shown.push(t), () => {});
+  assert.strictEqual(shown[0], 'BA.. 5');
+  nextHint(state, () => null, (t) => shown.push(t), () => {});
+  assert.strictEqual(shown[1], 'CR.. 7');
 });
 
 test('rebuilds queue when index exceeds length', () => {
   const shown = [];
   const newQueue = makeQueue('xyz');
   const state = { hintActive: true, hintQueue: makeQueue('batch'), hintIndex: 1 }; // exhausted
-  nextHint(state, () => newQueue, () => shown.push('showCurrentHint'), (t) => shown.push(t), () => {});
+  nextHint(state, () => newQueue, (t) => shown.push(t), () => {});
   assert.deepStrictEqual(state.hintQueue, newQueue);
-  assert.strictEqual(shown[0], 'showCurrentHint');
+  assert.strictEqual(shown[0], 'XY.. 3');
   assert.strictEqual(state.hintIndex, 1);
 });
 
 test('shows "Hints unavailable" when rebuild returns null', () => {
   const shown = [];
   const state = { hintActive: true, hintQueue: [], hintIndex: 0 }; // will trigger rebuild
-  nextHint(state, () => null, () => shown.push('showCurrentHint'), (t) => shown.push(t), () => {});
+  nextHint(state, () => null, (t) => shown.push(t), () => {});
   assert.strictEqual(shown[0], 'Hints unavailable');
 });
 
 test('shows "You found them all!" when rebuild returns []', () => {
   const shown = [];
   const state = { hintActive: true, hintQueue: [], hintIndex: 0 }; // will trigger rebuild
-  nextHint(state, () => [], () => shown.push('showCurrentHint'), (t) => shown.push(t), () => {});
+  nextHint(state, () => [], (t) => shown.push(t), () => {});
   assert.strictEqual(shown[0], 'You found them all!');
 });
 
