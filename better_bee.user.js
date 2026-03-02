@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.12
+// @version      1.13
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -19,7 +19,7 @@
   'use strict';
 
   // ─── Shared: Constants & State ──────────────────────────────────────
-  const EMOJIS = { success: '\u2705', duplicate: '\uD83D\uDD95', error: '\u274C' };
+  const EMOJIS = { success: '\u2705', duplicate: '\u261D\uFE0F', error: '\u274C' };
   const MIN_WORD_LENGTH = 4; // Spelling Bee words are 4+ letters
   const apiCache = new Map();
   let requestCounter = 0;
@@ -189,6 +189,13 @@
       0%, 100% { filter: drop-shadow(0 0 0 transparent); }
       50% { filter: drop-shadow(0 0 8px #f8cd05); }
     }
+    @keyframes finger-wag {
+      0%, 100% { transform: translateY(-50%) rotate(0deg); }
+      20%      { transform: translateY(-50%) rotate(15deg); }
+      40%      { transform: translateY(-50%) rotate(-15deg); }
+      60%      { transform: translateY(-50%) rotate(10deg); }
+      80%      { transform: translateY(-50%) rotate(-5deg); }
+    }
   `);
 
   // ─── Module 1: Hide NYT Dock (runs on ALL NYT pages) ───────────────
@@ -270,17 +277,24 @@
 
   let emojiTimer = null;
 
-  function showEmoji(emoji) {
+  function showEmoji(emoji, type) {
     clearTimeout(emojiTimer);
     emojiEl.style.transition = 'none';
+    emojiEl.style.animation = 'none';
     emojiEl.style.opacity = '0';
     emojiEl.style.transform = 'translateY(-50%) scale(0)';
+    emojiEl.style.transformOrigin = '';
     emojiEl.textContent = emoji;
     emojiEl.offsetHeight; // reflow
 
     emojiEl.style.transition = 'opacity 150ms ease-out, transform 150ms ease-out';
     emojiEl.style.opacity = '1';
     emojiEl.style.transform = 'translateY(-50%) scale(1)';
+
+    if (type === 'duplicate') {
+      emojiEl.style.transformOrigin = 'bottom center';
+      emojiEl.style.animation = 'finger-wag 600ms ease-in-out';
+    }
 
     emojiTimer = setTimeout(() => {
       emojiEl.style.transition = 'opacity 300ms ease-in, transform 300ms ease-in';
@@ -581,7 +595,7 @@
           setTimeout(() => {
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
-            if (type) showEmoji(EMOJIS[type]);
+            if (type) showEmoji(EMOJIS[type], type);
             if (type === 'success' && hintActive && !hintDismissing) {
               if (currentHintMatches(capturedWord)) {
                 hintDismissing = true;
