@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.9
+// @version      1.10
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -240,14 +240,14 @@
   }
 
   // ─── Auto-dismiss Play/Resume interstitials ─────────────────────────
-  function dismissInterstitials() {
-    const btn = document.querySelector('button.pz-moment__button.primary');
-    if (btn) { btn.click(); return true; }
-    const close = document.querySelector('.pz-moment__close');
-    if (close) { close.click(); return true; }
-    return false;
-  }
-  dismissInterstitials(); // try immediately
+  // Poll briefly on load to click the "Play"/"Resume" button as soon as it appears
+  const interstitialTimer = setInterval(() => {
+    const btn = document.querySelector('button.pz-moment__button.primary')
+             || document.querySelector('.pz-moment__close');
+    if (btn) { btn.click(); clearInterval(interstitialTimer); }
+  }, 200);
+  // Stop trying after 10 seconds
+  setTimeout(() => clearInterval(interstitialTimer), 10000);
 
   // ─── Module 3: Visual Feedback Emojis ──────────────────────────────
   const emojiEl = document.createElement('div');
@@ -556,7 +556,6 @@
   hookInputObserver();
 
   // ─── Shared MutationObserver (emoji feedback + word list) ───────────
-  let interstitialDismissed = false;
   let hintDismissing = false; // guard against duplicate dismiss animations
   const mainObserver = new MutationObserver(mutations => {
     let shouldProcessWords = false;
@@ -605,10 +604,6 @@
     }
 
     if (shouldProcessWords) processWordList();
-
-    if (!interstitialDismissed) {
-      interstitialDismissed = dismissInterstitials();
-    }
   });
 
   mainObserver.observe(document.body, { childList: true, subtree: true });
