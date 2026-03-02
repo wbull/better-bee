@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Hint Toast Preview — Letter Tiles</title>
+<style>
+  body {
+    background: #f0f0f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    margin: 0;
+  }
+
+  /* ─── Toast container ─── */
+  .we-hint-toast {
+    position: fixed; bottom: 10px; z-index: 10001;
+    display: flex; flex-direction: column; align-items: flex-start;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.2));
+  }
+
+  /* ─── Header ─── */
+  .we-hint-toast-header {
+    display: flex; align-items: center; gap: 4px;
+    background: #fff;
+    border-radius: 8px;
+    padding: 6px 8px;
+  }
+  .we-hint-toast.we-expanded .we-hint-toast-header {
+    border-radius: 8px 8px 0 0;
+  }
+
+  /* ─── Letter tiles row ─── */
+  .we-hint-tiles {
+    display: flex; gap: 2px; align-items: center;
+  }
+  .we-hint-tile {
+    display: flex; align-items: center; justify-content: center;
+    font-family: monospace; font-weight: 700; text-transform: uppercase;
+    border-radius: 3px;
+    box-sizing: border-box;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  /* Filled (prefix) — Spelling Bee gold */
+  .we-hint-tile.filled {
+    color: #000; background: #f8cd05;
+  }
+  /* Empty */
+  .we-hint-tile.empty {
+    color: transparent;
+  }
+  /* Typed — gold accent */
+  .we-hint-tile.typed {
+    color: #000;
+  }
+
+  /* ─── Size variants ─── */
+  .size-sm .we-hint-tile { width: 18px; height: 22px; font-size: 13px; }
+  .size-sm .we-hint-tile.empty { border: 1.5px solid #ccc; }
+  .size-sm .we-hint-tile.typed { border: 1.5px solid #f8cd05; background: #fef9e7; }
+
+  .size-md .we-hint-tile { width: 22px; height: 26px; font-size: 15px; }
+  .size-md .we-hint-tile.empty { border: 2px solid #ccc; }
+  .size-md .we-hint-tile.typed { border: 2px solid #f8cd05; background: #fef9e7; }
+
+  .size-lg .we-hint-tile { width: 26px; height: 30px; font-size: 17px; }
+  .size-lg .we-hint-tile.empty { border: 2px solid #bbb; }
+  .size-lg .we-hint-tile.typed { border: 2px solid #f8cd05; background: #fef9e7; }
+
+  /* ─── Checkmark ─── */
+  .we-hint-toast-check {
+    font-size: 16px; line-height: 1;
+    opacity: 0; transform: scale(0);
+    width: 0; overflow: hidden;
+    transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s ease;
+  }
+  .we-hint-toast-check.we-visible { opacity: 1; transform: scale(1); width: auto; }
+
+  /* ─── Clue ─── */
+  .we-hint-toast-clue {
+    background: #fff;
+    border-radius: 0 8px 8px 8px;
+    max-height: 0; opacity: 0; overflow: hidden;
+    transition: max-height 0.15s ease-in, opacity 0.15s ease-in, padding 0.15s ease-in;
+    font-size: 15px; font-weight: 400; line-height: 1.4;
+    color: #333; word-wrap: break-word;
+    padding: 0 14px;
+    max-width: 320px;
+    border-top: 1px solid transparent;
+  }
+  .we-hint-toast.we-expanded .we-hint-toast-clue {
+    max-height: 200px; opacity: 1;
+    padding: 10px 14px;
+    border-top-color: #e0e0e0;
+    transition: max-height 0.25s ease-out, opacity 0.2s ease-out, padding 0.25s ease-out;
+  }
+
+  .we-hint-toast-credit {
+    display: block; font-size: 11px; font-style: italic;
+    color: #888; margin-top: 4px;
+  }
+
+  /* ─── Labels ─── */
+  .label { position: fixed; font-size: 11px; color: #888; font-weight: 600; }
+
+  /* ─── Input sim ─── */
+  .sim-input {
+    position: fixed; top: 20px; left: 20px;
+    font-size: 16px; padding: 10px 16px; border-radius: 8px;
+    border: 2px solid #ccc; outline: none; width: 260px;
+    font-family: monospace; text-transform: uppercase; letter-spacing: 2px;
+  }
+  .sim-input:focus { border-color: #f8cd05; }
+  .sim-input-label { position: fixed; top: 60px; left: 20px; font-size: 11px; color: #888; }
+
+  /* ─── Controls ─── */
+  .controls {
+    position: fixed; top: 20px; right: 20px;
+    display: flex; gap: 10px;
+  }
+  .controls button {
+    padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc;
+    background: #fff; cursor: pointer; font-size: 14px;
+  }
+  .controls button:hover { background: #eee; }
+</style>
+</head>
+<body>
+
+<input class="sim-input" id="simInput" placeholder="Type here to fill tiles..." autofocus>
+<div class="sim-input-label">Simulates NYT input — letters fill into tiles as you type</div>
+
+<div class="controls">
+  <button onclick="toggle()">Toggle Expand (Space)</button>
+  <button onclick="toggleCheck()">Toggle Check (C)</button>
+</div>
+
+<!-- A: Small tiles -->
+<div class="we-hint-toast" id="t1" style="left: 10px;">
+  <div class="we-hint-toast-header">
+    <div class="we-hint-tiles size-sm" data-word="grammarian"></div>
+    <span class="we-hint-toast-check">✅</span>
+  </div>
+  <div class="we-hint-toast-clue">
+    <span>"Specialist in language rules"</span>
+    <span class="we-hint-toast-credit">Clue by SUCCINCT STEVE G</span>
+  </div>
+</div>
+<div class="label" style="bottom: 0; left: 10px;">A: Small (18px)</div>
+
+<!-- B: Medium tiles -->
+<div class="we-hint-toast" id="t2" style="left: 240px;">
+  <div class="we-hint-toast-header">
+    <div class="we-hint-tiles size-md" data-word="grammarian"></div>
+    <span class="we-hint-toast-check">✅</span>
+  </div>
+  <div class="we-hint-toast-clue">
+    <span>"Specialist in language rules"</span>
+    <span class="we-hint-toast-credit">Clue by SUCCINCT STEVE G</span>
+  </div>
+</div>
+<div class="label" style="bottom: 0; left: 240px;">B: Medium (22px)</div>
+
+<!-- C: Large tiles -->
+<div class="we-hint-toast" id="t3" style="left: 500px;">
+  <div class="we-hint-toast-header">
+    <div class="we-hint-tiles size-lg" data-word="grammarian"></div>
+    <span class="we-hint-toast-check">✅</span>
+  </div>
+  <div class="we-hint-toast-clue">
+    <span>"Specialist in language rules"</span>
+    <span class="we-hint-toast-credit">Clue by SUCCINCT STEVE G</span>
+  </div>
+</div>
+<div class="label" style="bottom: 0; left: 500px;">C: Large (26px)</div>
+
+<script>
+  const WORD = 'grammarian';
+  const PREFIX_LEN = 2;
+
+  // Build tiles for each treatment
+  document.querySelectorAll('.we-hint-tiles').forEach(container => {
+    const word = container.dataset.word;
+    for (let i = 0; i < word.length; i++) {
+      const tile = document.createElement('span');
+      tile.className = 'we-hint-tile ' + (i < PREFIX_LEN ? 'filled' : 'empty');
+      tile.textContent = i < PREFIX_LEN ? word[i] : '';
+      tile.dataset.index = i;
+      container.appendChild(tile);
+    }
+  });
+
+  // Show all toasts
+  const toasts = document.querySelectorAll('.we-hint-toast');
+  toasts.forEach(t => t.classList.add('we-visible'));
+
+  // Simulate typing
+  const simInput = document.getElementById('simInput');
+  simInput.addEventListener('input', () => {
+    const typed = simInput.value.toLowerCase();
+    document.querySelectorAll('.we-hint-tiles').forEach(container => {
+      const word = container.dataset.word;
+      const tiles = container.querySelectorAll('.we-hint-tile');
+      for (let i = PREFIX_LEN; i < word.length; i++) {
+        const tile = tiles[i];
+        const typedIdx = i - PREFIX_LEN;
+        if (typedIdx < typed.length) {
+          tile.textContent = typed[typedIdx];
+          tile.className = 'we-hint-tile typed';
+        } else {
+          tile.textContent = '';
+          tile.className = 'we-hint-tile empty';
+        }
+      }
+    });
+  });
+
+  function toggle() {
+    toasts.forEach(t => t.classList.toggle('we-expanded'));
+  }
+  function toggleCheck() {
+    document.querySelectorAll('.we-hint-toast-check').forEach(c => c.classList.toggle('we-visible'));
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target === simInput) return; // let typing work
+    if (e.code === 'Space') { e.preventDefault(); toggle(); }
+    if (e.code === 'KeyC') toggleCheck();
+  });
+</script>
+
+</body>
+</html>

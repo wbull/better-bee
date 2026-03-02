@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.22
+// @version      1.23
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -162,13 +162,11 @@
       color: #888;
     }
 
-    /* Hint toast */
+    /* Hint toast — pyramid layout */
     .we-hint-toast {
       position: fixed; bottom: 10px; left: 10px; z-index: 10001;
-      background: #fff; border-radius: 8px; padding: 10px 14px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-      display: flex; flex-direction: column; align-items: stretch;
-      width: fit-content; max-width: 320px;
+      display: flex; flex-direction: column; align-items: flex-start;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.2));
       transform: translateY(120%) scale(0.8); opacity: 0;
       transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
     }
@@ -184,30 +182,45 @@
       100% { transform: translateY(-20px) scale(0.9); opacity: 0; }
     }
     .we-hint-toast-header {
-      display: flex; align-items: center; gap: 8px;
-      align-self: flex-start;
+      display: flex; align-items: center; gap: 4px;
+      background: #fff; border-radius: 8px; padding: 6px 8px;
     }
-    .we-hint-toast-text {
-      font-size: 14px; font-weight: 700; letter-spacing: 1px; line-height: 1.3;
-      font-family: monospace; word-wrap: break-word;
+    .we-hint-toast.we-expanded .we-hint-toast-header {
+      border-radius: 8px 8px 0 0;
     }
+    .we-hint-tiles { display: flex; gap: 2px; align-items: center; }
+    .we-hint-tile {
+      display: flex; align-items: center; justify-content: center;
+      width: 26px; height: 30px; font-size: 17px;
+      font-family: monospace; font-weight: 700; text-transform: uppercase;
+      border-radius: 3px; box-sizing: border-box;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .we-hint-tile.filled { color: #000; background: #f8cd05; }
+    .we-hint-tile.empty { color: transparent; border: 2px solid #ddd; }
+    .we-hint-tile.typed { color: #000; border: 2px solid #f8cd05; background: #fef9e7; }
     .we-hint-toast-check {
       font-size: 16px; line-height: 1;
       opacity: 0; transform: scale(0);
-      transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+      width: 0; overflow: hidden;
+      transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s ease;
     }
-    .we-hint-toast-check.we-visible { opacity: 1; transform: scale(1); }
+    .we-hint-toast-check.we-visible { opacity: 1; transform: scale(1); width: auto; }
     .we-hint-toast-clue {
+      background: #fff; border-radius: 0 8px 8px 8px;
       max-height: 0; opacity: 0; overflow: hidden;
-      transition: max-height 0.3s ease, opacity 0.3s ease, margin-top 0.3s ease;
+      transition: max-height 0.15s ease-in, opacity 0.15s ease-in, padding 0.15s ease-in;
       font-size: 15px; font-weight: 400; line-height: 1.4;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      color: #333; margin-top: 0; word-wrap: break-word;
+      color: #333; word-wrap: break-word;
+      padding: 0 14px; max-width: 320px;
       border-top: 1px solid transparent;
     }
     .we-hint-toast.we-expanded .we-hint-toast-clue {
-      max-height: 200px; opacity: 1; margin-top: 6px;
-      border-top-color: #e0e0e0; padding-top: 6px;
+      max-height: 200px; opacity: 1;
+      padding: 10px 14px;
+      border-top-color: #e0e0e0;
+      transition: max-height 0.25s ease-out, opacity 0.2s ease-out, padding 0.25s ease-out;
     }
     .we-hint-toast-credit {
       display: block; font-size: 11px; font-style: italic;
@@ -630,6 +643,21 @@
     new MutationObserver(() => {
       const text = el.textContent?.trim();
       if (text) lastInputText = text;
+      // Update hint tiles with current input
+      if (hintActive && hintIndex > 0) {
+        const tiles = hintTiles.querySelectorAll('.we-hint-tile');
+        const input = (text || '').toUpperCase();
+        for (let i = 2; i < tiles.length; i++) {
+          const typedIdx = i - 2;
+          if (typedIdx < input.length) {
+            tiles[i].textContent = input[typedIdx];
+            tiles[i].className = 'we-hint-tile typed';
+          } else {
+            tiles[i].textContent = '';
+            tiles[i].className = 'we-hint-tile empty';
+          }
+        }
+      }
     }).observe(el, { childList: true, characterData: true, subtree: true });
   }
   hookInputObserver();
@@ -693,13 +721,13 @@
   hintToast.className = 'we-hint-toast';
   hintToast.innerHTML = `
     <div class="we-hint-toast-header">
-      <span class="we-hint-toast-text"></span>
+      <div class="we-hint-tiles"></div>
       <span class="we-hint-toast-check">\u2705</span>
     </div>
     <div class="we-hint-toast-clue"></div>`;
   document.body.appendChild(hintToast);
 
-  const hintToastText = hintToast.querySelector('.we-hint-toast-text');
+  const hintTiles = hintToast.querySelector('.we-hint-tiles');
   const hintToastCheck = hintToast.querySelector('.we-hint-toast-check');
   const hintToastClue = hintToast.querySelector('.we-hint-toast-clue');
 
@@ -760,8 +788,26 @@
     return hints;
   }
 
-  function showHintToast(text) {
-    hintToastText.textContent = text;
+  function renderHintTiles(word) {
+    hintTiles.innerHTML = '';
+    for (let i = 0; i < word.length; i++) {
+      const tile = document.createElement('span');
+      tile.className = 'we-hint-tile ' + (i < 2 ? 'filled' : 'empty');
+      tile.textContent = i < 2 ? word[i].toUpperCase() : '';
+      hintTiles.appendChild(tile);
+    }
+  }
+
+  function showHintToast(entryOrText) {
+    if (typeof entryOrText === 'object' && entryOrText.word) {
+      renderHintTiles(entryOrText.word);
+    } else {
+      hintTiles.innerHTML = '';
+      const span = document.createElement('span');
+      span.style.cssText = 'font-size: 14px; font-weight: 700; white-space: nowrap;';
+      span.textContent = entryOrText;
+      hintTiles.appendChild(span);
+    }
     hintToastClue.textContent = '';
     hintToastClue.innerHTML = '';
     hintToast.classList.remove('we-expanded');
@@ -828,7 +874,7 @@
 
     hintIndex++;
     const entry = hintQueue[hintIndex - 1];
-    showHintToast(entry.hint);
+    showHintToast(entry);
   }
 
   function startHints() {

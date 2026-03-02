@@ -15,7 +15,7 @@ function test(name, fn) {
   }
 }
 
-// nextHint now calls showHintToastFn(entry.hint) directly (always compact).
+// nextHint now calls showHintToastFn(entry) with the full entry object.
 function nextHint(state, buildHintQueueFn, showHintToastFn, stopHintsFn) {
   if (!state.hintActive) return;
 
@@ -38,7 +38,7 @@ function nextHint(state, buildHintQueueFn, showHintToastFn, stopHintsFn) {
 
   state.hintIndex++;
   const entry = state.hintQueue[state.hintIndex - 1];
-  showHintToastFn(entry.hint);
+  showHintToastFn(entry);
 }
 
 console.log('\nnextHint:');
@@ -54,13 +54,15 @@ test('advances hintIndex on each call', () => {
   assert.strictEqual(state.hintIndex, 2);
 });
 
-test('calls showHintToast with the hint string', () => {
+test('calls showHintToast with the entry object', () => {
   const shown = [];
   const state = { hintActive: true, hintQueue: makeQueue('batch', 'crackle'), hintIndex: 0 };
   nextHint(state, () => null, (t) => shown.push(t), () => {});
-  assert.strictEqual(shown[0], 'BA.. 5');
+  assert.strictEqual(shown[0].hint, 'BA.. 5');
+  assert.strictEqual(shown[0].word, 'batch');
   nextHint(state, () => null, (t) => shown.push(t), () => {});
-  assert.strictEqual(shown[1], 'CR.. 7');
+  assert.strictEqual(shown[1].hint, 'CR.. 7');
+  assert.strictEqual(shown[1].word, 'crackle');
 });
 
 test('rebuilds queue when index exceeds length', () => {
@@ -69,7 +71,7 @@ test('rebuilds queue when index exceeds length', () => {
   const state = { hintActive: true, hintQueue: makeQueue('batch'), hintIndex: 1 }; // exhausted
   nextHint(state, () => newQueue, (t) => shown.push(t), () => {});
   assert.deepStrictEqual(state.hintQueue, newQueue);
-  assert.strictEqual(shown[0], 'XY.. 3');
+  assert.strictEqual(shown[0].hint, 'XY.. 3');
   assert.strictEqual(state.hintIndex, 1);
 });
 
