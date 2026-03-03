@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.27
+// @version      1.28
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -281,6 +281,7 @@
   let hintDismissing = false;
   let hintExpanded = false;   // true when clue row is visible
   let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
+  let lastPuzzleId = null;   // Tracks current puzzle to detect navigation to back-catalog
 
   // ─── Module 2: Bee Buddy Button ───────────────────────────────────
   if (!document.getElementById('bee-buddy')) {
@@ -664,7 +665,7 @@
       const text = el.textContent?.trim();
       if (text) lastInputText = text;
       // Update hint tiles with current input
-      if (hintActive && hintIndex > 0) {
+      if (hintActive && hintIndex > 0 && !hintDismissing) {
         const tiles = hintTiles.querySelectorAll('.we-hint-tile');
         const input = (text || '').toUpperCase();
         const word = (hintQueue[hintIndex - 1]?.word || '').toUpperCase();
@@ -791,7 +792,20 @@
     return upper.length === len && upper.startsWith(prefix);
   }
 
+  function resetPuzzleState() {
+    stopHints();
+    clueCache = null;
+    hintQueue = [];
+    hintIndex = 0;
+  }
+
   function buildHintQueue() {
+    const currentId = unsafeWindow.gameData?.today?.id;
+    if (currentId && currentId !== lastPuzzleId) {
+      lastPuzzleId = currentId;
+      clueCache = null;  // Invalidate clues for old puzzle
+    }
+
     const answers = getAnswers();
     if (!answers) return null;
     const found = getFoundWords();
