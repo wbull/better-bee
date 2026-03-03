@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.26
+// @version      1.27
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -655,10 +655,10 @@
     const el = document.querySelector('.sb-hive-input-content');
     if (!el) return;
     inputObserverAttached = true;
-    // Puzzle is ready — trigger bee fly-in
+    // Puzzle is ready — wait for layout to settle, then trigger bee fly-in
     const bee = document.getElementById('bee-buddy');
     if (bee && !bee.classList.contains('we-arrived')) {
-      bee.classList.add('we-arrived');
+      setTimeout(() => bee.classList.add('we-arrived'), 1000);
     }
     new MutationObserver(() => {
       const text = el.textContent?.trim();
