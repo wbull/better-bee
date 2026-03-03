@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.28
+// @version      1.29
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -706,25 +706,27 @@
           const input = document.querySelector('.sb-hive-input-content');
           const directRead = input?.textContent?.trim() || '';
           const capturedWord = directRead.length >= MIN_WORD_LENGTH ? directRead : lastInputText;
+          // Preemptively guard tiles if this looks like a successful hint match
+          const pendingGotIt = hintActive && !hintDismissing && currentHintMatches(capturedWord);
+          if (pendingGotIt) hintDismissing = true;
           setTimeout(() => {
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
             if (type) showEmoji(EMOJIS[type], type);
-            if (type === 'success' && hintActive && !hintDismissing) {
-              if (currentHintMatches(capturedWord)) {
-                hintDismissing = true;
-                hintToastCheck.classList.add('we-visible');
+            if (type === 'success' && pendingGotIt) {
+              hintToastCheck.classList.add('we-visible');
+              setTimeout(() => {
+                hintToast.classList.add('we-got-it');
                 setTimeout(() => {
-                  hintToast.classList.add('we-got-it');
+                  hideHintToast();
                   setTimeout(() => {
-                    hideHintToast();
-                    setTimeout(() => {
-                      hintDismissing = false;
-                      nextHint();
-                    }, 400);
-                  }, 600);
-                }, 400);
-              }
+                    hintDismissing = false;
+                    nextHint();
+                  }, 400);
+                }, 600);
+              }, 400);
+            } else if (pendingGotIt) {
+              hintDismissing = false;  // Wasn't success — release guard
             }
           }, 100);
         }
