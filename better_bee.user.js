@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.29
+// @version      1.30
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -27,6 +27,11 @@
     error: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzNiAzNiI+PHBhdGggZmlsbD0iI0JFMTkzMSIgZD0iTTM2IDE4YzAgOS45NDEtOC4wNTkgMTgtMTggMThTMCAyNy45NDEgMCAxOCA4LjA1OSAwIDE4IDBzMTggOC4wNTkgMTggMTh6Ii8+PHBhdGggZmlsbD0iI0ZGRiIgZD0iTTMyIDIwYzAgMS4xMDQtLjg5NiAyLTIgMkg2Yy0xLjEwNCAwLTItLjg5Ni0yLTJ2LTRjMC0xLjEwNC44OTYtMiAyLTJoMjRjMS4xMDQgMCAyIC44OTYgMiAydjR6Ii8+PC9zdmc+',
   };
   const MIN_WORD_LENGTH = 4; // Spelling Bee words are 4+ letters
+  const WORD_LIST_SELECTORS = [
+    '.sb-wordlist-items-pag li',
+    '.sb-wordlist-window li',
+    '.sb-recent-words li',
+  ];
   const apiCache = new Map();
   let requestCounter = 0;
 
@@ -264,12 +269,13 @@
     if (dock) {
       dock.style.display = 'none';
       dock.remove();
+      dockObserver.disconnect();
     }
   }
 
   hideDock();
   const dockObserver = new MutationObserver(hideDock);
-  dockObserver.observe(document.documentElement, { childList: true, subtree: true });
+  dockObserver.observe(document.body, { childList: true, subtree: true });
 
   // ─── Guard: Only run modules 2+ on Spelling Bee page ───────────────
   if (!location.pathname.includes('/puzzles/spelling-bee')) return;
@@ -279,7 +285,6 @@
   let hintQueue = [];
   let hintIndex = 0;
   let hintDismissing = false;
-  let hintExpanded = false;   // true when clue row is visible
   let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
   let lastPuzzleId = null;   // Tracks current puzzle to detect navigation to back-catalog
 
@@ -500,7 +505,7 @@
     try {
       const puzzleId = unsafeWindow.gameData.today.id;
       const url = `https://static01.nyt.com/newsgraphics/2023-01-18-spelling-bee-buddy/clues/${puzzleId}.json`;
-      const data = await fetch(url).then(r => r.ok ? r.json() : null);
+      const data = await gmFetch(url).catch(() => null);
       if (data && Array.isArray(data)) {
         clueCache = new Map(data.map(c => [c.word, c]));
       }
@@ -563,9 +568,7 @@
   }
 
   function escapeHTML(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   async function showWordExplorer(word) {
@@ -605,12 +608,7 @@
 
   // Word list processor
   function processWordList() {
-    const selectors = [
-      '.sb-wordlist-items-pag li',
-      '.sb-wordlist-window li',
-      '.sb-recent-words li',
-    ];
-    for (const sel of selectors) {
+    for (const sel of WORD_LIST_SELECTORS) {
       document.querySelectorAll(sel).forEach(li => {
         if (li.dataset.weProcessed) return;
         li.dataset.weProcessed = '1';
@@ -768,12 +766,7 @@
 
   function getFoundWords() {
     const found = new Set();
-    const selectors = [
-      '.sb-wordlist-items-pag li',
-      '.sb-wordlist-window li',
-      '.sb-recent-words li',
-    ];
-    for (const sel of selectors) {
+    for (const sel of WORD_LIST_SELECTORS) {
       document.querySelectorAll(sel).forEach(li => {
         const word = li.textContent.trim().toLowerCase();
         if (word) found.add(word);
@@ -792,13 +785,6 @@
     const len = parseInt(entry.hint.split(' ').pop(), 10);
     const upper = word.toUpperCase();
     return upper.length === len && upper.startsWith(prefix);
-  }
-
-  function resetPuzzleState() {
-    stopHints();
-    clueCache = null;
-    hintQueue = [];
-    hintIndex = 0;
   }
 
   function buildHintQueue() {
@@ -848,10 +834,8 @@
       span.textContent = entryOrText;
       hintTiles.appendChild(span);
     }
-    hintToastClue.textContent = '';
     hintToastClue.innerHTML = '';
     hintToast.classList.remove('we-expanded');
-    hintExpanded = false;
     hintToastCheck.classList.remove('we-visible');
     hintToast.classList.remove('we-got-it', 'we-visible');
     hintToast.offsetHeight; // reflow
@@ -883,12 +867,10 @@
     } else {
       hintToastClue.textContent = '(no clue available)';
     }
-    hintExpanded = true;
     hintToast.classList.add('we-expanded');
   }
 
   function collapseHint() {
-    hintExpanded = false;
     hintToast.classList.remove('we-expanded');
   }
 
@@ -933,7 +915,6 @@
     }
 
     hintActive = true;
-    hintExpanded = false;
     const bee = document.getElementById('bee-buddy');
     if (bee) bee.classList.add('we-hinting');
     fetchClues(); // pre-fetch in background
@@ -942,7 +923,6 @@
 
   function stopHints() {
     hintActive = false;
-    hintExpanded = false;
     hideHintToast();
     const bee = document.getElementById('bee-buddy');
     if (bee) bee.classList.remove('we-hinting');
@@ -957,7 +937,7 @@
       else { nextHint(); }
     } else if (e.key === '.' && hintActive) {
       e.preventDefault();
-      hintExpanded ? collapseHint() : expandHint();
+      hintToast.classList.contains('we-expanded') ? collapseHint() : expandHint();
     }
   });
 

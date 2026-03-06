@@ -1,5 +1,4 @@
 import assert from 'node:assert';
-import { JSDOM } from 'jsdom';
 
 let passed = 0;
 let failed = 0;
@@ -16,12 +15,8 @@ function test(name, fn) {
   }
 }
 
-const { document } = new JSDOM().window;
-
 function escapeHTML(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function buildPanelContent(word, dictResult, wikiResult) {
