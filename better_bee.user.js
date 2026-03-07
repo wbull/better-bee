@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.31
+// @version      1.32
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -259,6 +259,56 @@
       60%      { transform: translateY(-50%) rotate(10deg); }
       80%      { transform: translateY(-50%) rotate(-5deg); }
     }
+    /* Onboarding overlay */
+    .ob-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0 0 4px;
+      text-align: center;
+    }
+    .ob-subtitle {
+      font-size: 16px;
+      color: #666;
+      text-align: center;
+      margin-bottom: 20px;
+      font-style: italic;
+    }
+    .ob-nyt-note {
+      border-left: 4px solid #f8cd05;
+      background: #fef9e7;
+      padding: 10px 14px;
+      border-radius: 0 8px 8px 0;
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .ob-features {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 24px;
+    }
+    .ob-features li {
+      font-size: 15px;
+      padding: 6px 0;
+      line-height: 1.4;
+    }
+    .ob-features li strong { font-weight: 600; }
+    .ob-cta {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 18px;
+      font-weight: 700;
+      background: #f8cd05;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .ob-cta:hover { background: #e6bc00; }
+    .ob-cta:focus { outline: 2px solid #000; outline-offset: 2px; }
   `);
 
   // ─── Module 1: Hide NYT Dock (runs on ALL NYT pages) ───────────────
@@ -287,6 +337,7 @@
   let hintDismissing = false;
   let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
   let lastPuzzleId = null;   // Tracks current puzzle to detect navigation to back-catalog
+  let onboardingActive = false;
 
   // ─── Module 2: Bee Buddy Button ───────────────────────────────────
   if (!document.getElementById('bee-buddy')) {
@@ -335,6 +386,94 @@
     if (btn || splash) clearInterval(interstitialTimer);
   }, 200);
   setTimeout(() => clearInterval(interstitialTimer), 10000);
+
+  // ─── Onboarding Overlay (one-time welcome) ────────────────────────
+  if (!localStorage.getItem('betterBee_onboardingSeen')) {
+    onboardingActive = true;
+
+    const obOverlay = document.createElement('div');
+    obOverlay.className = 'we-overlay';
+    obOverlay.setAttribute('role', 'dialog');
+    obOverlay.setAttribute('aria-modal', 'true');
+    obOverlay.setAttribute('aria-label', 'Welcome to Better Bee');
+    obOverlay.innerHTML = `
+      <div class="we-panel" style="max-width: 440px;">
+        <button class="we-panel-close" aria-label="Close">&times;</button>
+        <div style="text-align: center; font-size: 48px; margin-bottom: 8px;">🐝</div>
+        <h2 class="ob-title">Welcome to Better Bee</h2>
+        <p class="ob-subtitle">A few small enhancements for Spelling Bee</p>
+        <div class="ob-nyt-note">
+          Spelling Bee is created by The New York Times. Better Bee is an unofficial fan project &mdash; thank you, NYT, for making such a great game!
+        </div>
+        <ul class="ob-features">
+          <li>😊 <strong>Emoji feedback</strong> &mdash; visual reactions to your guesses</li>
+          <li>📖 <strong>Word Explorer</strong> &mdash; tap found words for definitions</li>
+          <li>💡 <strong>Hints</strong> &mdash; press <kbd>?</kbd> for a gentle nudge</li>
+          <li>🐝 <strong>Bee Buddy</strong> &mdash; quick access to NYT&rsquo;s hint companion</li>
+        </ul>
+        <button class="ob-cta">Let's Play!</button>
+      </div>`;
+    obOverlay.style.display = 'none';
+    document.body.appendChild(obOverlay);
+
+    const obCloseBtn = obOverlay.querySelector('.we-panel-close');
+    const obCtaBtn = obOverlay.querySelector('.ob-cta');
+
+    function dismissOnboarding() {
+      localStorage.setItem('betterBee_onboardingSeen', '1');
+      onboardingActive = false;
+      obOverlay.classList.remove('we-visible');
+      setTimeout(() => {
+        obOverlay.remove();
+        // Trigger bee fly-in now that onboarding is done
+        const bee = document.getElementById('bee-buddy');
+        if (bee && !bee.classList.contains('we-arrived')) {
+          setTimeout(() => bee.classList.add('we-arrived'), 300);
+        }
+      }, 200);
+    }
+
+    obCtaBtn.addEventListener('click', dismissOnboarding);
+    obCloseBtn.addEventListener('click', dismissOnboarding);
+    obOverlay.addEventListener('click', e => {
+      if (e.target === obOverlay) dismissOnboarding();
+    });
+    obOverlay.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        dismissOnboarding();
+        return;
+      }
+      // Focus trap
+      if (e.key !== 'Tab') return;
+      const focusables = obOverlay.querySelectorAll(
+        'button, [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    });
+
+    // Show after puzzle DOM is ready
+    const obTimer = setInterval(() => {
+      if (document.querySelector('.sb-hive-input-content')) {
+        clearInterval(obTimer);
+        setTimeout(() => {
+          obOverlay.style.display = 'flex';
+          requestAnimationFrame(() => {
+            obOverlay.classList.add('we-visible');
+            obCtaBtn.focus();
+          });
+        }, 500);
+      }
+    }, 200);
+    setTimeout(() => clearInterval(obTimer), 15000);
+  }
 
   // ─── Module 3: Visual Feedback Emojis ──────────────────────────────
   const emojiEl = document.createElement('img');
@@ -658,8 +797,9 @@
     if (!el) return;
     inputObserverAttached = true;
     // Puzzle is ready — wait for layout to settle, then trigger bee fly-in
+    // (suppressed during onboarding; dismissOnboarding() triggers it instead)
     const bee = document.getElementById('bee-buddy');
-    if (bee && !bee.classList.contains('we-arrived')) {
+    if (bee && !bee.classList.contains('we-arrived') && !onboardingActive) {
       setTimeout(() => bee.classList.add('we-arrived'), 1000);
     }
     new MutationObserver(() => {
