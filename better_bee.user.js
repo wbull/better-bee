@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.30
+// @version      1.31
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -324,8 +324,11 @@
   // NYT shows a yellow loading screen (#js-hook-pz-moment__loading) and/or
   // a Play/Resume modal. Poll and remove whatever we find.
   const interstitialTimer = setInterval(() => {
-    const btn = document.querySelector('button.pz-moment__button.primary')
-             || document.querySelector('.pz-moment__close');
+    const btns = document.querySelectorAll('button.pz-moment__button.primary, .pz-moment__close');
+    const btn = Array.from(btns).find(b => {
+      const text = b.textContent.trim().toLowerCase();
+      return text === 'play' || text === 'resume' || text === 'continue' || b.classList.contains('pz-moment__close');
+    });
     if (btn) btn.click();
     const splash = document.querySelector('#js-hook-pz-moment__loading, .pz-moment');
     if (splash) splash.remove();
@@ -888,6 +891,23 @@
         return;
       }
       if (hintQueue.length === 0) {
+        showHintToast('You found them all!');
+        setTimeout(() => { stopHints(); }, 3000);
+        return;
+      }
+    }
+
+    // Skip any entries the user has since found
+    const found = getFoundWords();
+    while (hintIndex < hintQueue.length && found.has(hintQueue[hintIndex].word)) {
+      hintIndex++;
+    }
+
+    if (hintIndex >= hintQueue.length) {
+      // All remaining were found — rebuild
+      hintQueue = buildHintQueue();
+      hintIndex = 0;
+      if (!hintQueue || hintQueue.length === 0) {
         showHintToast('You found them all!');
         setTimeout(() => { stopHints(); }, 3000);
         return;
