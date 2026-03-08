@@ -188,6 +188,180 @@ test('full flow via DOM: recent words list', () => {
   assert.strictEqual(currentHintMatches(word, [{ word: 'batch', hint: 'BA.. 5' }], 1), true);
 });
 
+// ─── nextHint logic (extracted from better_bee.user.js) ─────────────
+
+// Simulates the nextHint control flow with injectable dependencies.
+// State object: { hintActive, hintDismissing, hintQueue, hintIndex }
+// Deps: { getFoundWords: () => Set, buildHintQueue: () => array|null, showHintToast, stopHints }
+// Returns the state after the call (mutated in place).
+//
+// FIXED VERSION — single rebuild-and-skip loop ensures every word is checked.
+function nextHint(state, deps) {
+  if (!state.hintActive || state.hintDismissing) return state;
+
+  for (let pass = 0; pass < 2; pass++) {
+    if (state.hintIndex >= state.hintQueue.length) {
+      state.hintQueue = deps.buildHintQueue();
+      state.hintIndex = 0;
+
+      if (state.hintQueue === null) {
+        deps.showHintToast('Hints unavailable');
+        deps.stopHints();
+        return state;
+      }
+      if (state.hintQueue.length === 0) {
+        deps.showHintToast('You found them all!');
+        deps.stopHints();
+        return state;
+      }
+    }
+
+    const found = deps.getFoundWords();
+    while (state.hintIndex < state.hintQueue.length && found.has(state.hintQueue[state.hintIndex].word)) {
+      state.hintIndex++;
+    }
+
+    if (state.hintIndex < state.hintQueue.length) {
+      state.hintIndex++;
+      deps.showHintToast(state.hintQueue[state.hintIndex - 1]);
+      return state;
+    }
+  }
+
+  deps.showHintToast('You found them all!');
+  deps.stopHints();
+  return state;
+}
+
+// --- nextHint tests ---
+console.log('\nnextHint (skip-loop after rebuild):');
+
+function makeHintEntry(word) {
+  return { word, hint: word.toUpperCase().slice(0, 2) + '.. ' + word.length };
+}
+
+function makeDeps(overrides = {}) {
+  const log = { shown: [], stopped: false };
+  return {
+    log,
+    getFoundWords: overrides.getFoundWords || (() => new Set()),
+    buildHintQueue: overrides.buildHintQueue || (() => []),
+    showHintToast: (entry) => { log.shown.push(entry); },
+    stopHints: () => { log.stopped = true; },
+  };
+}
+
+test('shows next unfound word from queue', () => {
+  const q = [makeHintEntry('batch'), makeHintEntry('crackle')];
+  const deps = makeDeps();
+  const state = { hintActive: true, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown.length, 1);
+  assert.strictEqual(deps.log.shown[0].word, 'batch');
+  assert.strictEqual(state.hintIndex, 1);
+});
+
+test('skips found words in current queue', () => {
+  const q = [makeHintEntry('batch'), makeHintEntry('crackle')];
+  const deps = makeDeps({ getFoundWords: () => new Set(['batch']) });
+  const state = { hintActive: true, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown[0].word, 'crackle');
+  assert.strictEqual(state.hintIndex, 2);
+});
+
+test('skips multiple consecutive found words', () => {
+  const q = [makeHintEntry('batch'), makeHintEntry('crackle'), makeHintEntry('amble')];
+  const deps = makeDeps({ getFoundWords: () => new Set(['batch', 'crackle']) });
+  const state = { hintActive: true, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown[0].word, 'amble');
+});
+
+test('rebuilds queue when all remaining are found', () => {
+  const q = [makeHintEntry('batch')];
+  const deps = makeDeps({
+    getFoundWords: () => new Set(['batch']),
+    buildHintQueue: () => [makeHintEntry('fresh')],
+  });
+  const state = { hintActive: true, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown[0].word, 'fresh');
+});
+
+test('shows "You found them all!" when rebuild returns empty', () => {
+  const q = [makeHintEntry('batch')];
+  const deps = makeDeps({
+    getFoundWords: () => new Set(['batch']),
+    buildHintQueue: () => [],
+  });
+  const state = { hintActive: true, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown[0], 'You found them all!');
+  assert.strictEqual(deps.log.stopped, true);
+});
+
+test('shows "Hints unavailable" when rebuild returns null', () => {
+  const deps = makeDeps({ buildHintQueue: () => null });
+  const state = { hintActive: true, hintDismissing: false, hintQueue: [], hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown[0], 'Hints unavailable');
+  assert.strictEqual(deps.log.stopped, true);
+});
+
+// THE BUG: after second rebuild, found words must still be skipped
+test('after rebuild, still skips found words (the actual bug)', () => {
+  // Queue has one word left, which is found. Rebuild returns two words,
+  // first of which is ALSO found (stale getFoundWords during buildHintQueue).
+  const q = [makeHintEntry('batch')];
+  let rebuilt = false;
+  const deps = makeDeps({
+    getFoundWords: () => new Set(['batch', 'crackle']),
+    buildHintQueue: () => {
+      rebuilt = true;
+      // buildHintQueue doesn't filter 'crackle' because getFoundWords was stale
+      return [makeHintEntry('crackle'), makeHintEntry('amble')];
+    },
+  });
+  const state = { hintActive: true, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.ok(rebuilt, 'should have rebuilt the queue');
+  // Must NOT show 'crackle' (already found) — must show 'amble'
+  assert.strictEqual(deps.log.shown[0].word, 'amble');
+});
+
+test('after rebuild where all words are found, shows completion message', () => {
+  const q = [makeHintEntry('batch')];
+  const deps = makeDeps({
+    getFoundWords: () => new Set(['batch', 'crackle']),
+    buildHintQueue: () => [makeHintEntry('crackle')],
+  });
+  const state = { hintActive: true, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown[0], 'You found them all!');
+  assert.strictEqual(deps.log.stopped, true);
+});
+
+// --- hintDismissing guard ---
+console.log('\nnextHint (hintDismissing guard):');
+
+test('nextHint is a no-op when hintDismissing is true', () => {
+  const q = [makeHintEntry('batch')];
+  const deps = makeDeps();
+  const state = { hintActive: true, hintDismissing: true, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown.length, 0, 'should not show any hint');
+  assert.strictEqual(state.hintIndex, 0, 'should not advance index');
+});
+
+test('nextHint is a no-op when hintActive is false', () => {
+  const q = [makeHintEntry('batch')];
+  const deps = makeDeps();
+  const state = { hintActive: false, hintDismissing: false, hintQueue: q, hintIndex: 0 };
+  nextHint(state, deps);
+  assert.strictEqual(deps.log.shown.length, 0);
+});
+
 // --- Summary ---
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

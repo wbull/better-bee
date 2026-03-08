@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.32
+// @version      1.34
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -18,6 +18,7 @@
 
 (function () {
   'use strict';
+
 
   // ─── Shared: Constants & State ──────────────────────────────────────
   // Twemoji SVGs (CC-BY 4.0, twitter/twemoji v14.0.2) embedded as data URIs
@@ -71,7 +72,7 @@
       background: #fff;
       color: #222;
       border-radius: 12px;
-      padding: 32px;
+      padding: clamp(16px, 4.2vw, 32px);
       max-width: 560px;
       width: 90vw;
       max-height: 85vh;
@@ -87,26 +88,28 @@
       position: absolute;
       top: 12px;
       right: 16px;
-      font-size: 28px;
+      font-size: clamp(24px, 3.6vw, 28px);
       background: none;
       border: none;
       cursor: pointer;
       color: #666;
       line-height: 1;
-      padding: 4px 8px;
+      padding: clamp(8px, 1.3vw, 10px);
+      min-height: 44px; min-width: 44px;
+      display: flex; align-items: center; justify-content: center;
     }
     .we-panel-close:hover { color: #000; }
     .we-panel-close:focus { outline: 2px solid #f8cd05; outline-offset: 2px; }
 
     .we-panel-word {
-      font-size: 32px;
+      font-size: clamp(24px, 4.2vw, 32px);
       font-weight: 700;
       margin: 0 0 8px;
       text-transform: capitalize;
     }
 
     .we-panel-phonetic {
-      font-size: 18px;
+      font-size: clamp(15px, 2.3vw, 18px);
       color: #666;
       margin-bottom: 16px;
     }
@@ -115,9 +118,10 @@
       background: none;
       border: 2px solid #f8cd05;
       border-radius: 20px;
-      padding: 6px 16px;
+      padding: clamp(10px, 1.6vw, 12px) clamp(16px, 2.6vw, 20px);
       cursor: pointer;
       font-size: 16px;
+      min-height: 44px;
       margin-bottom: 16px;
       transition: background 0.15s;
     }
@@ -129,13 +133,13 @@
       font-weight: 600;
       color: #555;
       margin: 12px 0 4px;
-      font-size: 18px;
+      font-size: clamp(15px, 2.3vw, 18px);
     }
 
     .we-panel-def {
-      font-size: 18px;
+      font-size: clamp(15px, 2.3vw, 18px);
       line-height: 1.5;
-      margin: 4px 0 4px 16px;
+      margin: 4px 0 4px clamp(10px, 2.1vw, 16px);
       color: #333;
     }
 
@@ -155,21 +159,21 @@
     }
 
     .we-panel-nodef {
-      font-size: 18px;
+      font-size: clamp(15px, 2.3vw, 18px);
       color: #888;
       margin: 16px 0;
     }
 
     .we-panel-loading {
       text-align: center;
-      padding: 40px;
-      font-size: 20px;
+      padding: clamp(20px, 5.2vw, 40px);
+      font-size: clamp(16px, 2.6vw, 20px);
       color: #888;
     }
 
     /* Hint toast — pyramid layout */
     .we-hint-toast {
-      position: fixed; bottom: 10px; left: 10px; z-index: 10001;
+      position: fixed; bottom: clamp(10px, 1.8vw, 14px); left: clamp(10px, 1.8vw, 14px); z-index: 10001;
       display: flex; flex-direction: column; align-items: flex-start;
       filter: drop-shadow(0 4px 12px rgba(0,0,0,0.2));
       transform: translateY(120%) scale(0.8); opacity: 0;
@@ -188,15 +192,15 @@
     }
     .we-hint-toast-header {
       display: flex; align-items: center; gap: 4px;
-      background: #fff; border-radius: 8px; padding: 6px 8px;
+      background: #fff; border-radius: 8px; padding: clamp(6px, 1.2vw, 9px) clamp(8px, 1.4vw, 11px);
     }
     .we-hint-toast.we-expanded .we-hint-toast-header {
       border-radius: 8px 8px 0 0;
     }
-    .we-hint-tiles { display: flex; gap: 2px; align-items: center; }
+    .we-hint-tiles { display: flex; gap: clamp(2px, 0.39vw, 3px); align-items: center; }
     .we-hint-tile {
       display: flex; align-items: center; justify-content: center;
-      width: 26px; height: 30px; font-size: 17px;
+      width: clamp(26px, 4.6vw, 35px); height: clamp(30px, 5.3vw, 41px); font-size: clamp(17px, 3vw, 23px);
       font-family: monospace; font-weight: 700; text-transform: uppercase;
       border-radius: 3px; box-sizing: border-box;
       transition: background 0.15s ease, color 0.15s ease;
@@ -206,7 +210,7 @@
     .we-hint-tile.empty { color: transparent; border: 2px solid #ddd; }
     .we-hint-tile.typed { color: #000; border: 2px solid #f8cd05; background: #fef9e7; }
     .we-hint-toast-check {
-      font-size: 16px; line-height: 1;
+      font-size: 22px; line-height: 1;
       opacity: 0; transform: scale(0);
       width: 0; overflow: hidden;
       transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s ease;
@@ -216,20 +220,20 @@
       background: #fff; border-radius: 0 8px 8px 8px;
       max-height: 0; opacity: 0; overflow: hidden;
       transition: max-height 0.15s ease-in, opacity 0.15s ease-in, padding 0.15s ease-in;
-      font-size: 15px; font-weight: 400; line-height: 1.4;
+      font-size: clamp(15px, 2.6vw, 20px); font-weight: 400; line-height: 1.4;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color: #333; word-wrap: break-word;
-      padding: 0 14px; max-width: 320px;
+      padding: 0 clamp(14px, 2.5vw, 19px); max-width: clamp(320px, 56vw, 432px);
       border-top: 1px solid transparent;
     }
     .we-hint-toast.we-expanded .we-hint-toast-clue {
       max-height: 200px; opacity: 1;
-      padding: 10px 14px;
+      padding: clamp(10px, 1.8vw, 14px) clamp(14px, 2.5vw, 19px);
       border-top-color: #e0e0e0;
       transition: max-height 0.25s ease-out, opacity 0.2s ease-out, padding 0.25s ease-out;
     }
     .we-hint-toast-credit {
-      display: block; font-size: 11px; font-style: italic;
+      display: block; font-size: clamp(11px, 1.9vw, 15px); font-style: italic;
       color: #888; margin-top: 4px;
     }
     /* Bee fly-in on page load */
@@ -246,11 +250,38 @@
     #bee-buddy.we-arrived {
       animation: bee-fly-in 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
     }
-    /* Bee pulse when hinting */
-    #bee-buddy.we-hinting { animation: bee-pulse 1.5s ease-in-out infinite; }
-    @keyframes bee-pulse {
-      0%, 100% { filter: drop-shadow(0 0 0 transparent); }
-      50% { filter: drop-shadow(0 0 8px #f8cd05); }
+    /* Bee flies off downward (wiggly exit) */
+    @keyframes bee-fly-out {
+      0%   { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+      15%  { transform: translate(12px, 8px) rotate(15deg); opacity: 1; }
+      30%  { transform: translate(-15px, 35px) rotate(-18deg); opacity: 1; }
+      45%  { transform: translate(18px, 70px) rotate(14deg); opacity: 0.9; }
+      60%  { transform: translate(-12px, 110px) rotate(-12deg); opacity: 0.7; }
+      75%  { transform: translate(8px, 150px) rotate(8deg); opacity: 0.4; }
+      100% { transform: translate(-3px, 200px) rotate(-5deg); opacity: 0; }
+    }
+    #bee-buddy.we-exiting {
+      animation: bee-fly-out 0.7s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards;
+    }
+    /* Bee returns from below (bouncy re-entrance) */
+    @keyframes bee-return {
+      0%   { transform: translate(0, 200px) rotate(0deg); opacity: 0; }
+      10%  { opacity: 1; }
+      25%  { transform: translate(14px, 60px) rotate(12deg); }
+      40%  { transform: translate(-10px, -20px) rotate(-14deg); }
+      55%  { transform: translate(8px, 10px) rotate(10deg); }
+      70%  { transform: translate(-5px, -6px) rotate(-6deg); }
+      82%  { transform: translate(3px, 3px) rotate(3deg); }
+      92%  { transform: translate(-1px, -1px) rotate(-1deg); }
+      100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    }
+    #bee-buddy.we-returning {
+      animation: bee-return 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    }
+    /* Bee hidden during hints (no ghost clicks) */
+    #bee-buddy.we-exited {
+      opacity: 0;
+      pointer-events: none;
     }
     @keyframes finger-wag {
       0%, 100% { transform: translateY(-50%) rotate(0deg); }
@@ -261,13 +292,13 @@
     }
     /* Onboarding overlay */
     .ob-title {
-      font-size: 28px;
+      font-size: clamp(22px, 3.6vw, 28px);
       font-weight: 700;
       margin: 0 0 4px;
       text-align: center;
     }
     .ob-subtitle {
-      font-size: 16px;
+      font-size: clamp(14px, 2.1vw, 16px);
       color: #666;
       text-align: center;
       margin-bottom: 20px;
@@ -276,9 +307,9 @@
     .ob-nyt-note {
       border-left: 4px solid #f8cd05;
       background: #fef9e7;
-      padding: 10px 14px;
+      padding: clamp(8px, 1.3vw, 10px) clamp(10px, 1.8vw, 14px);
       border-radius: 0 8px 8px 0;
-      font-size: 14px;
+      font-size: clamp(13px, 1.8vw, 14px);
       color: #555;
       margin-bottom: 20px;
       line-height: 1.5;
@@ -289,16 +320,16 @@
       margin: 0 0 24px;
     }
     .ob-features li {
-      font-size: 15px;
-      padding: 6px 0;
+      font-size: clamp(14px, 2vw, 15px);
+      padding: clamp(4px, 0.8vw, 6px) 0;
       line-height: 1.4;
     }
     .ob-features li strong { font-weight: 600; }
     .ob-cta {
       display: block;
       width: 100%;
-      padding: 14px;
-      font-size: 18px;
+      padding: clamp(12px, 1.8vw, 14px);
+      font-size: clamp(16px, 2.3vw, 18px);
       font-weight: 700;
       background: #f8cd05;
       color: #000;
@@ -309,6 +340,11 @@
     }
     .ob-cta:hover { background: #e6bc00; }
     .ob-cta:focus { outline: 2px solid #000; outline-offset: 2px; }
+
+    @media (max-width: 600px) {
+      .we-panel { width: 95vw; border-radius: 8px; }
+      .we-hint-toast-clue { max-width: min(360px, 85vw); }
+    }
   `);
 
   // ─── Module 1: Hide NYT Dock (runs on ALL NYT pages) ───────────────
@@ -350,10 +386,10 @@
 
     bee.style.cssText = `
       position: fixed;
-      bottom: 10px;
-      right: 10px;
+      bottom: clamp(10px, 1.8vw, 14px);
+      right: clamp(10px, 1.8vw, 14px);
       cursor: pointer;
-      font-size: 30px;
+      font-size: clamp(30px, 5.3vw, 41px);
       z-index: 9999;
       user-select: none;
     `;
@@ -397,9 +433,9 @@
     obOverlay.setAttribute('aria-modal', 'true');
     obOverlay.setAttribute('aria-label', 'Welcome to Better Bee');
     obOverlay.innerHTML = `
-      <div class="we-panel" style="max-width: 440px;">
+      <div class="we-panel" style="max-width: min(440px, 90vw);">
         <button class="we-panel-close" aria-label="Close">&times;</button>
-        <div style="text-align: center; font-size: 48px; margin-bottom: 8px;">🐝</div>
+        <div style="text-align: center; font-size: clamp(36px, 6.25vw, 48px); margin-bottom: 8px;">🐝</div>
         <h2 class="ob-title">Welcome to Better Bee</h2>
         <p class="ob-subtitle">A few small enhancements for Spelling Bee</p>
         <div class="ob-nyt-note">
@@ -1018,45 +1054,43 @@
   }
 
   function nextHint() {
-    if (!hintActive) return;
+    if (!hintActive || hintDismissing) return;
 
-    // If queue exhausted, rebuild
-    if (hintIndex >= hintQueue.length) {
-      hintQueue = buildHintQueue();
-      hintIndex = 0;
+    // Try up to 2 passes: skip found words, rebuild if needed
+    for (let pass = 0; pass < 2; pass++) {
+      if (hintIndex >= hintQueue.length) {
+        hintQueue = buildHintQueue();
+        hintIndex = 0;
 
-      if (hintQueue === null) {
-        showHintToast('Hints unavailable');
-        setTimeout(() => { stopHints(); }, 3000);
+        if (hintQueue === null) {
+          showHintToast('Hints unavailable');
+          setTimeout(() => { stopHints(); }, 3000);
+          return;
+        }
+        if (hintQueue.length === 0) {
+          showHintToast('You found them all!');
+          setTimeout(() => { stopHints(); }, 3000);
+          return;
+        }
+      }
+
+      // Skip any entries the user has since found
+      const found = getFoundWords();
+      while (hintIndex < hintQueue.length && found.has(hintQueue[hintIndex].word)) {
+        hintIndex++;
+      }
+
+      if (hintIndex < hintQueue.length) {
+        hintIndex++;
+        showHintToast(hintQueue[hintIndex - 1]);
         return;
       }
-      if (hintQueue.length === 0) {
-        showHintToast('You found them all!');
-        setTimeout(() => { stopHints(); }, 3000);
-        return;
-      }
+      // All remaining were found — loop back to rebuild
     }
 
-    // Skip any entries the user has since found
-    const found = getFoundWords();
-    while (hintIndex < hintQueue.length && found.has(hintQueue[hintIndex].word)) {
-      hintIndex++;
-    }
-
-    if (hintIndex >= hintQueue.length) {
-      // All remaining were found — rebuild
-      hintQueue = buildHintQueue();
-      hintIndex = 0;
-      if (!hintQueue || hintQueue.length === 0) {
-        showHintToast('You found them all!');
-        setTimeout(() => { stopHints(); }, 3000);
-        return;
-      }
-    }
-
-    hintIndex++;
-    const entry = hintQueue[hintIndex - 1];
-    showHintToast(entry);
+    // Both passes failed — everything found
+    showHintToast('You found them all!');
+    setTimeout(() => { stopHints(); }, 3000);
   }
 
   function startHints() {
@@ -1076,16 +1110,30 @@
 
     hintActive = true;
     const bee = document.getElementById('bee-buddy');
-    if (bee) bee.classList.add('we-hinting');
+    if (bee) {
+      bee.classList.remove('we-hinting', 'we-arrived', 'we-returning');
+      bee.classList.add('we-exiting');
+      setTimeout(() => { if (hintActive) bee.classList.add('we-exited'); }, 600);
+    }
     fetchClues(); // pre-fetch in background
-    nextHint();
+    setTimeout(() => { if (hintActive) nextHint(); }, 450);
   }
 
   function stopHints() {
     hintActive = false;
     hideHintToast();
     const bee = document.getElementById('bee-buddy');
-    if (bee) bee.classList.remove('we-hinting');
+    if (bee) {
+      bee.classList.remove('we-hinting', 'we-exiting', 'we-exited');
+      setTimeout(() => {
+        bee.classList.add('we-returning');
+        bee.addEventListener('animationend', function onReturn() {
+          bee.removeEventListener('animationend', onReturn);
+          bee.classList.remove('we-returning');
+          bee.classList.add('we-arrived');
+        });
+      }, 400);
+    }
   }
 
   // Keyboard shortcuts: ? = start/next hint, . = expand/collapse clue
