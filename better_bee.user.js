@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.35
+// @version      1.36
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -11,7 +11,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        unsafeWindow
-// @connect      api.freedictionaryapi.com
+// @connect      api.dictionaryapi.dev
 // @connect      en.wikipedia.org
 // @connect      static01.nyt.com
 // ==/UserScript==
@@ -656,7 +656,7 @@
   }
 
   function fetchDictionary(word) {
-    return gmFetch(`https://api.freedictionaryapi.com/api/v2/entries/en/${encodeURIComponent(word)}`);
+    return gmFetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
   }
 
   function fetchWikipedia(word) {
