@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.36
+// @version      1.37
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -10,8 +10,13 @@
 // @downloadURL  https://raw.githubusercontent.com/wbull/better-bee/main/better_bee.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
 // @connect      api.dictionaryapi.dev
+// @connect      dictionaryapi.com
+// @connect      media.merriam-webster.com
 // @connect      en.wikipedia.org
 // @connect      static01.nyt.com
 // ==/UserScript==
@@ -35,6 +40,22 @@
   ];
   const apiCache = new Map();
   let requestCounter = 0;
+
+  // ─── Merriam-Webster API Key (optional) ─────────────────────────────
+  let mwApiKey = GM_getValue('mw_api_key', '');
+  GM_registerMenuCommand('Set Dictionary API Key', () => {
+    const key = prompt('Enter your Merriam-Webster Collegiate API key:\n(Get one free at dictionaryapi.com)', mwApiKey);
+    if (key !== null) {
+      mwApiKey = key.trim();
+      GM_setValue('mw_api_key', mwApiKey);
+      apiCache.clear();
+    }
+  });
+  GM_registerMenuCommand('Clear Dictionary API Key', () => {
+    mwApiKey = '';
+    GM_setValue('mw_api_key', '');
+    apiCache.clear();
+  });
 
   // ─── Shared: CSS ────────────────────────────────────────────────────
   GM_addStyle(`
@@ -656,6 +677,9 @@
   }
 
   function fetchDictionary(word) {
+    if (mwApiKey) {
+      return gmFetch(`https://dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(word)}?key=${encodeURIComponent(mwApiKey)}`);
+    }
     return gmFetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
   }
 
@@ -674,7 +698,8 @@
       if (apiCache.has(key)) return;
       try {
         const result = await fetchDictionary(word);
-        apiCache.set(key, { dictResult: { status: 'fulfilled', value: result } });
+        const source = mwApiKey ? 'mw' : 'free';
+        apiCache.set(key, { dictResult: { status: 'fulfilled', value: result, source } });
       } catch {
         apiCache.set(key, { dictResult: { status: 'rejected' } });
       }
@@ -694,6 +719,16 @@
     return clueCache;
   }
 
+  function getMwAudioUrl(audio) {
+    if (!audio) return '';
+    let subdir;
+    if (audio.startsWith('bix')) subdir = 'bix';
+    else if (audio.startsWith('gg')) subdir = 'gg';
+    else if (/^[0-9\W]/.test(audio)) subdir = 'number';
+    else subdir = audio.charAt(0);
+    return `https://media.merriam-webster.com/audio/prons/en/us/mp3/${subdir}/${audio}.mp3`;
+  }
+
   function buildTooltipContent(word, dictResult) {
     let html = '';
 
@@ -702,29 +737,60 @@
 
     // Dictionary content
     if (dictResult.status === 'fulfilled' && Array.isArray(dictResult.value)) {
-      const entry = dictResult.value[0];
-
-      // Part of speech + phonetic on one line
-      const phonetic = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
-      const firstPos = entry.meanings?.[0]?.partOfSpeech || '';
-      const metaParts = [firstPos, phonetic].filter(Boolean);
-      if (metaParts.length) {
-        html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
+      // MW returns array of strings when word not found (suggestions)
+      if (dictResult.source === 'mw' && typeof dictResult.value[0] === 'string') {
+        html += `<div class="we-tooltip-nodef">No definition found.</div>`;
+        return html;
       }
 
-      // Audio button (small, inline)
-      const audioUrl = entry.phonetics
-        ?.map(p => p.audio)
-        .filter(a => a && a.length > 0)[0];
-      if (audioUrl) {
-        html += `<button class="we-tooltip-audio" data-audio="${escapeHTML(audioUrl)}">&#128264;</button>`;
-      }
+      if (dictResult.source === 'mw') {
+        // Merriam-Webster format
+        const entry = dictResult.value[0];
+        const pos = entry.fl || '';
+        const phonetic = entry.hwi?.prs?.[0]?.mw ? `/${entry.hwi.prs[0].mw}/` : '';
+        const metaParts = [pos, phonetic].filter(Boolean);
+        if (metaParts.length) {
+          html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
+        }
 
-      // 1-2 definitions from first meaning group
-      const defs = entry.meanings?.[0]?.definitions;
-      if (defs) {
+        // Audio
+        const audioFile = entry.hwi?.prs?.[0]?.sound?.audio;
+        const audioUrl = getMwAudioUrl(audioFile);
+        if (audioUrl) {
+          html += `<button class="we-tooltip-audio" data-audio="${escapeHTML(audioUrl)}">&#128264;</button>`;
+        }
+
+        // Definitions
+        const defs = entry.shortdef || [];
         for (const def of defs.slice(0, 2)) {
-          html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def.definition)}</div>`;
+          html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def)}</div>`;
+        }
+      } else {
+        // Free dictionary API format (default)
+        const entry = dictResult.value[0];
+
+        // Part of speech + phonetic on one line
+        const phonetic = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
+        const firstPos = entry.meanings?.[0]?.partOfSpeech || '';
+        const metaParts = [firstPos, phonetic].filter(Boolean);
+        if (metaParts.length) {
+          html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
+        }
+
+        // Audio button (small, inline)
+        const audioUrl = entry.phonetics
+          ?.map(p => p.audio)
+          .filter(a => a && a.length > 0)[0];
+        if (audioUrl) {
+          html += `<button class="we-tooltip-audio" data-audio="${escapeHTML(audioUrl)}">&#128264;</button>`;
+        }
+
+        // 1-2 definitions from first meaning group
+        const defs = entry.meanings?.[0]?.definitions;
+        if (defs) {
+          for (const def of defs.slice(0, 2)) {
+            html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def.definition)}</div>`;
+          }
         }
       }
     } else {
@@ -755,7 +821,8 @@
 
       try {
         const result = await fetchDictionary(word);
-        dictResult = { status: 'fulfilled', value: result };
+        const source = mwApiKey ? 'mw' : 'free';
+        dictResult = { status: 'fulfilled', value: result, source };
       } catch {
         dictResult = { status: 'rejected' };
       }
