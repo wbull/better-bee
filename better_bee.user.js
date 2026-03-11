@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.34
+// @version      1.35
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -11,7 +11,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        unsafeWindow
-// @connect      api.dictionaryapi.dev
+// @connect      api.freedictionaryapi.com
 // @connect      en.wikipedia.org
 // @connect      static01.nyt.com
 // ==/UserScript==
@@ -53,122 +53,80 @@
       border-color: transparent !important;
     }
 
-    /* Overlay backdrop */
-    .we-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-    }
-    .we-overlay.we-visible { opacity: 1; }
-
-    /* Overlay panel */
-    .we-panel {
-      background: #fff;
-      color: #222;
-      border-radius: 12px;
-      padding: clamp(16px, 4.2vw, 32px);
-      max-width: 560px;
-      width: 90vw;
-      max-height: 85vh;
-      overflow-y: auto;
-      position: relative;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-      transform: scale(0.95);
-      transition: transform 0.2s ease;
-    }
-    .we-overlay.we-visible .we-panel { transform: scale(1); }
-
-    .we-panel-close {
+    /* Tooltip container */
+    .we-tooltip {
       position: absolute;
-      top: 12px;
-      right: 16px;
-      font-size: clamp(24px, 3.6vw, 28px);
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #666;
-      line-height: 1;
-      padding: clamp(8px, 1.3vw, 10px);
-      min-height: 44px; min-width: 44px;
-      display: flex; align-items: center; justify-content: center;
+      z-index: 10000;
+      max-width: 300px;
+      background: #333;
+      color: #f0f0f0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      opacity: 0;
+      transform: scale(0.95);
+      transition: opacity 0.15s ease, transform 0.15s ease;
     }
-    .we-panel-close:hover { color: #000; }
-    .we-panel-close:focus { outline: 2px solid #f8cd05; outline-offset: 2px; }
+    .we-tooltip.we-visible { opacity: 1; transform: scale(1); }
 
-    .we-panel-word {
-      font-size: clamp(24px, 4.2vw, 32px);
+    /* Arrow pointing at word */
+    .we-tooltip-arrow {
+      position: absolute;
+      top: -6px;
+      width: 12px; height: 12px;
+      background: #333;
+      transform: rotate(45deg);
+    }
+    .we-tooltip.we-above .we-tooltip-arrow {
+      top: auto;
+      bottom: -6px;
+    }
+
+    .we-tooltip-word {
+      font-size: 16px;
       font-weight: 700;
-      margin: 0 0 8px;
+      margin: 0 0 4px;
       text-transform: capitalize;
     }
 
-    .we-panel-phonetic {
-      font-size: clamp(15px, 2.3vw, 18px);
-      color: #666;
-      margin-bottom: 16px;
-    }
-
-    .we-panel-audio {
-      background: none;
-      border: 2px solid #f8cd05;
-      border-radius: 20px;
-      padding: clamp(10px, 1.6vw, 12px) clamp(16px, 2.6vw, 20px);
-      cursor: pointer;
-      font-size: 16px;
-      min-height: 44px;
-      margin-bottom: 16px;
-      transition: background 0.15s;
-    }
-    .we-panel-audio:hover { background: #f8cd05; }
-    .we-panel-audio:focus { outline: 2px solid #f8cd05; outline-offset: 2px; }
-
-    .we-panel-pos {
+    .we-tooltip-meta {
+      font-size: 13px;
+      color: #aaa;
       font-style: italic;
-      font-weight: 600;
-      color: #555;
-      margin: 12px 0 4px;
-      font-size: clamp(15px, 2.3vw, 18px);
+      margin-bottom: 6px;
     }
 
-    .we-panel-def {
-      font-size: clamp(15px, 2.3vw, 18px);
-      line-height: 1.5;
-      margin: 4px 0 4px clamp(10px, 2.1vw, 16px);
-      color: #333;
-    }
-
-    .we-panel-img {
-      margin-top: 20px;
-      text-align: center;
-    }
-    .we-panel-img img {
-      max-width: 100%;
-      max-height: 300px;
-      border-radius: 8px;
-    }
-    .we-panel-img-caption {
+    .we-tooltip-audio {
+      background: none;
+      border: 1px solid #666;
+      border-radius: 12px;
+      padding: 2px 8px;
+      cursor: pointer;
       font-size: 14px;
-      color: #888;
-      margin-top: 6px;
+      color: #f0f0f0;
+      margin-bottom: 6px;
+      transition: border-color 0.15s;
+    }
+    .we-tooltip-audio:hover { border-color: #f8cd05; }
+
+    .we-tooltip-def {
+      font-size: 13px;
+      line-height: 1.4;
+      margin: 3px 0 3px 8px;
+      color: #ddd;
     }
 
-    .we-panel-nodef {
-      font-size: clamp(15px, 2.3vw, 18px);
-      color: #888;
-      margin: 16px 0;
+    .we-tooltip-nodef {
+      font-size: 13px;
+      color: #999;
+      margin: 4px 0;
     }
 
-    .we-panel-loading {
-      text-align: center;
-      padding: clamp(20px, 5.2vw, 40px);
-      font-size: clamp(16px, 2.6vw, 20px);
-      color: #888;
+    .we-tooltip-loading {
+      font-size: 13px;
+      color: #999;
+      padding: 4px 0;
     }
 
     /* Hint toast — pyramid layout */
@@ -291,6 +249,32 @@
       80%      { transform: translateY(-50%) rotate(-5deg); }
     }
     /* Onboarding overlay */
+    .ob-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 10000;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity 0.2s ease;
+    }
+    .ob-overlay.we-visible { opacity: 1; }
+    .ob-panel {
+      background: #fff; color: #222; border-radius: 12px;
+      padding: clamp(16px, 4.2vw, 32px);
+      max-width: min(440px, 90vw); width: 90vw;
+      position: relative;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      transform: scale(0.95); transition: transform 0.2s ease;
+    }
+    .ob-overlay.we-visible .ob-panel { transform: scale(1); }
+    .ob-close {
+      position: absolute; top: 12px; right: 16px;
+      font-size: clamp(24px, 3.6vw, 28px);
+      background: none; border: none; cursor: pointer; color: #666;
+      line-height: 1; padding: clamp(8px, 1.3vw, 10px);
+      min-height: 44px; min-width: 44px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ob-close:hover { color: #000; }
     .ob-title {
       font-size: clamp(22px, 3.6vw, 28px);
       font-weight: 700;
@@ -342,7 +326,7 @@
     .ob-cta:focus { outline: 2px solid #000; outline-offset: 2px; }
 
     @media (max-width: 600px) {
-      .we-panel { width: 95vw; border-radius: 8px; }
+      .we-tooltip { max-width: min(280px, 90vw); }
       .we-hint-toast-clue { max-width: min(360px, 85vw); }
     }
   `);
@@ -428,13 +412,13 @@
     onboardingActive = true;
 
     const obOverlay = document.createElement('div');
-    obOverlay.className = 'we-overlay';
+    obOverlay.className = 'ob-overlay';
     obOverlay.setAttribute('role', 'dialog');
     obOverlay.setAttribute('aria-modal', 'true');
     obOverlay.setAttribute('aria-label', 'Welcome to Better Bee');
     obOverlay.innerHTML = `
-      <div class="we-panel" style="max-width: min(440px, 90vw);">
-        <button class="we-panel-close" aria-label="Close">&times;</button>
+      <div class="ob-panel">
+        <button class="ob-close" aria-label="Close">&times;</button>
         <div style="text-align: center; font-size: clamp(36px, 6.25vw, 48px); margin-bottom: 8px;">🐝</div>
         <h2 class="ob-title">Welcome to Better Bee</h2>
         <p class="ob-subtitle">A few small enhancements for Spelling Bee</p>
@@ -452,7 +436,7 @@
     obOverlay.style.display = 'none';
     document.body.appendChild(obOverlay);
 
-    const obCloseBtn = obOverlay.querySelector('.we-panel-close');
+    const obCloseBtn = obOverlay.querySelector('.ob-close');
     const obCtaBtn = obOverlay.querySelector('.ob-cta');
 
     function dismissOnboarding() {
@@ -577,41 +561,57 @@
 
   // ─── Module 4: Word Explorer ────────────────────────────────────────
 
-  // Create overlay
-  const overlay = document.createElement('div');
-  overlay.className = 'we-overlay';
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', 'Word Explorer');
-  overlay.innerHTML = '<div class="we-panel"><button class="we-panel-close" aria-label="Close">&times;</button><div class="we-panel-body"></div></div>';
-  document.body.appendChild(overlay);
+  // Create tooltip
+  const tooltip = document.createElement('div');
+  tooltip.className = 'we-tooltip';
+  tooltip.setAttribute('role', 'tooltip');
+  tooltip.innerHTML = '<div class="we-tooltip-arrow"></div><div class="we-tooltip-body"></div>';
+  document.body.appendChild(tooltip);
+  const tooltipBody = tooltip.querySelector('.we-tooltip-body');
 
-  const panelBody = overlay.querySelector('.we-panel-body');
-  const closeBtn = overlay.querySelector('.we-panel-close');
-  let lastFocused = null;
-
-  function openOverlay() {
-    lastFocused = document.activeElement;
-    overlay.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    // Trigger transition, then move focus
-    requestAnimationFrame(() => {
-      overlay.classList.add('we-visible');
-      closeBtn.focus();
-    });
+  function hideTooltip() {
+    tooltip.classList.remove('we-visible');
+    setTimeout(() => { tooltip.style.display = 'none'; }, 150);
   }
 
-  function closeOverlay() {
-    overlay.classList.remove('we-visible');
-    document.body.style.overflow = '';
-    setTimeout(() => { overlay.style.display = 'none'; }, 200);
-    if (lastFocused) lastFocused.focus();
+  function positionTooltip(anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const arrow = tooltip.querySelector('.we-tooltip-arrow');
+    tooltip.style.display = 'block';
+    tooltip.classList.remove('we-above');
+
+    // Measure tooltip
+    const tw = tooltip.offsetWidth;
+    const th = tooltip.offsetHeight;
+
+    // Place below by default; flip above if not enough room
+    const gap = 8;
+    let top = rect.bottom + gap + window.scrollY;
+    let above = false;
+    if (rect.bottom + gap + th > window.innerHeight && rect.top - gap - th > 0) {
+      top = rect.top - th - gap + window.scrollY;
+      above = true;
+      tooltip.classList.add('we-above');
+    }
+
+    // Horizontally center on word, clamped to viewport
+    let left = rect.left + rect.width / 2 - tw / 2 + window.scrollX;
+    const margin = 8;
+    left = Math.max(margin, Math.min(left, window.innerWidth - tw - margin + window.scrollX));
+
+    tooltip.style.top = `${top}px`;
+    tooltip.style.left = `${left}px`;
+
+    // Position arrow to point at center of word
+    const arrowLeft = rect.left + rect.width / 2 - left - window.scrollX;
+    arrow.style.left = `${Math.max(12, Math.min(arrowLeft, tw - 12))}px`;
   }
 
-  overlay.style.display = 'none';
-  closeBtn.addEventListener('click', closeOverlay);
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) closeOverlay();
+  // Dismiss on click outside or Escape
+  document.addEventListener('pointerdown', e => {
+    if (tooltip.style.display !== 'none' && !tooltip.contains(e.target) && !e.target.closest('.we-word')) {
+      hideTooltip();
+    }
   });
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
@@ -621,10 +621,10 @@
       stopHints();
       return;
     }
-    // Close our Word Explorer overlay first
-    if (overlay.style.display !== 'none') {
+    // Close tooltip
+    if (tooltip.style.display !== 'none') {
       e.preventDefault();
-      closeOverlay();
+      hideTooltip();
       return;
     }
     // Close NYT native modals (e.g. "Keep playing" screen)
@@ -634,22 +634,7 @@
       nytClose.click();
     }
   });
-
-  // Focus trap
-  overlay.addEventListener('keydown', e => {
-    if (e.key !== 'Tab') return;
-    const focusables = overlay.querySelectorAll(
-      'button, [href], [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (e.shiftKey) {
-      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
-    } else {
-      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
-    }
-  });
+  tooltip.style.display = 'none';
 
   // API helpers
   function gmFetch(url) {
@@ -671,11 +656,29 @@
   }
 
   function fetchDictionary(word) {
-    return gmFetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+    return gmFetch(`https://api.freedictionaryapi.com/api/v2/entries/en/${encodeURIComponent(word)}`);
   }
 
   function fetchWikipedia(word) {
     return gmFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(word)}`);
+  }
+
+  // Pre-fetch definitions for instant tooltip display
+  let prefetchDelay = 0;
+  function prefetchDefinition(word) {
+    const key = word.toLowerCase();
+    if (apiCache.has(key)) return;
+    prefetchDelay += 50;
+    const delay = prefetchDelay;
+    setTimeout(async () => {
+      if (apiCache.has(key)) return;
+      try {
+        const result = await fetchDictionary(word);
+        apiCache.set(key, { dictResult: { status: 'fulfilled', value: result } });
+      } catch {
+        apiCache.set(key, { dictResult: { status: 'rejected' } });
+      }
+    }, delay);
   }
 
   async function fetchClues() {
@@ -691,55 +694,41 @@
     return clueCache;
   }
 
-  function buildPanelContent(word, dictResult, wikiResult) {
+  function buildTooltipContent(word, dictResult) {
     let html = '';
 
     // Word heading
-    html += `<h2 class="we-panel-word">${escapeHTML(word)}</h2>`;
+    html += `<div class="we-tooltip-word">${escapeHTML(word)}</div>`;
 
     // Dictionary content
     if (dictResult.status === 'fulfilled' && Array.isArray(dictResult.value)) {
       const entry = dictResult.value[0];
 
-      // Phonetic
+      // Part of speech + phonetic on one line
       const phonetic = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
-      if (phonetic) {
-        html += `<div class="we-panel-phonetic">${escapeHTML(phonetic)}</div>`;
+      const firstPos = entry.meanings?.[0]?.partOfSpeech || '';
+      const metaParts = [firstPos, phonetic].filter(Boolean);
+      if (metaParts.length) {
+        html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
       }
 
-      // Audio button
+      // Audio button (small, inline)
       const audioUrl = entry.phonetics
         ?.map(p => p.audio)
         .filter(a => a && a.length > 0)[0];
       if (audioUrl) {
-        html += `<button class="we-panel-audio" data-audio="${escapeHTML(audioUrl)}">&#128264; Play pronunciation</button>`;
+        html += `<button class="we-tooltip-audio" data-audio="${escapeHTML(audioUrl)}">&#128264;</button>`;
       }
 
-      // Meanings
-      if (entry.meanings) {
-        for (const meaning of entry.meanings) {
-          html += `<div class="we-panel-pos">${escapeHTML(meaning.partOfSpeech)}</div>`;
-          for (const def of meaning.definitions.slice(0, 3)) {
-            html += `<div class="we-panel-def">&bull; ${escapeHTML(def.definition)}</div>`;
-          }
+      // 1-2 definitions from first meaning group
+      const defs = entry.meanings?.[0]?.definitions;
+      if (defs) {
+        for (const def of defs.slice(0, 2)) {
+          html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def.definition)}</div>`;
         }
       }
     } else {
-      html += `<div class="we-panel-nodef">No definition found for &ldquo;${escapeHTML(word)}&rdquo;</div>`;
-    }
-
-    // Wikipedia image
-    if (wikiResult.status === 'fulfilled') {
-      const wiki = wikiResult.value;
-      // Skip disambiguation pages
-      if (wiki.type !== 'disambiguation' && wiki.thumbnail?.source) {
-        html += `<div class="we-panel-img">`;
-        html += `<img src="${escapeHTML(wiki.thumbnail.source)}" alt="${escapeHTML(wiki.title || word)}">`;
-        if (wiki.description) {
-          html += `<div class="we-panel-img-caption">${escapeHTML(wiki.description)}</div>`;
-        }
-        html += `</div>`;
-      }
+      html += `<div class="we-tooltip-nodef">No definition found.</div>`;
     }
 
     return html;
@@ -749,33 +738,40 @@
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  async function showWordExplorer(word) {
+  async function showTooltip(word, anchor) {
     const myRequest = ++requestCounter;
-    panelBody.innerHTML = '<div class="we-panel-loading">Loading&hellip;</div>';
-    openOverlay();
 
     const cacheKey = word.toLowerCase();
-    let dictResult, wikiResult;
+    let dictResult;
 
     if (apiCache.has(cacheKey)) {
-      ({ dictResult, wikiResult } = apiCache.get(cacheKey));
+      ({ dictResult } = apiCache.get(cacheKey));
     } else {
-      const [d, w] = await Promise.allSettled([
-        fetchDictionary(word),
-        fetchWikipedia(word),
-      ]);
-      dictResult = d;
-      wikiResult = w;
-      apiCache.set(cacheKey, { dictResult, wikiResult });
+      // Show loading state while fetching
+      tooltipBody.innerHTML = '<div class="we-tooltip-loading">Loading\u2026</div>';
+      tooltip.style.display = 'block';
+      positionTooltip(anchor);
+      requestAnimationFrame(() => tooltip.classList.add('we-visible'));
+
+      try {
+        const result = await fetchDictionary(word);
+        dictResult = { status: 'fulfilled', value: result };
+      } catch {
+        dictResult = { status: 'rejected' };
+      }
+      apiCache.set(cacheKey, { dictResult });
     }
 
     // Discard stale responses
     if (myRequest !== requestCounter) return;
 
-    panelBody.innerHTML = buildPanelContent(word, dictResult, wikiResult);
+    tooltipBody.innerHTML = buildTooltipContent(word, dictResult);
+    tooltip.style.display = 'block';
+    positionTooltip(anchor);
+    requestAnimationFrame(() => tooltip.classList.add('we-visible'));
 
     // Wire up audio button
-    const audioBtn = panelBody.querySelector('.we-panel-audio');
+    const audioBtn = tooltipBody.querySelector('.we-tooltip-audio');
     if (audioBtn) {
       audioBtn.addEventListener('click', () => {
         const audio = new Audio(audioBtn.dataset.audio);
@@ -799,6 +795,7 @@
         li.setAttribute('role', 'button');
         li.setAttribute('aria-label', `Look up ${wordText}`);
         li.tabIndex = 0;
+        prefetchDefinition(wordText);
 
         li.addEventListener('pointerdown', e => {
           e.preventDefault();
@@ -812,12 +809,12 @@
           e.preventDefault();
           e.stopImmediatePropagation();
           li.blur();
-          showWordExplorer(wordText);
+          showTooltip(wordText, li);
         }, true);
         li.addEventListener('keydown', e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            showWordExplorer(wordText);
+            showTooltip(wordText, li);
           }
         });
       });
