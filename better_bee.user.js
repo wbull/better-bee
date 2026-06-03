@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.37
+// @version      1.38
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -854,8 +854,9 @@
         if (li.dataset.weProcessed) return;
         li.dataset.weProcessed = '1';
 
-        // Find the text node or inner element with the word
-        const wordText = li.textContent.trim().toLowerCase();
+        // NYT renders each word as <span class="sb-anagram">word</span><span class="visually-hidden">word</span>,
+        // so li.textContent concatenates to "wordword" (and the pangram appends " (pangram)" to the hidden span).
+        const wordText = (li.querySelector('.sb-anagram')?.textContent || li.textContent).trim().toLowerCase();
         if (!wordText || wordText.length < MIN_WORD_LENGTH) return;
 
         li.classList.add('we-word');
@@ -1011,7 +1012,7 @@
     const found = new Set();
     for (const sel of WORD_LIST_SELECTORS) {
       document.querySelectorAll(sel).forEach(li => {
-        const word = li.textContent.trim().toLowerCase();
+        const word = (li.querySelector('.sb-anagram')?.textContent || li.textContent).trim().toLowerCase();
         if (word) found.add(word);
       });
     }

@@ -27,7 +27,7 @@ function getFoundWords(document) {
   ];
   for (const sel of selectors) {
     document.querySelectorAll(sel).forEach(li => {
-      const word = li.textContent.trim().toLowerCase();
+      const word = (li.querySelector('.sb-anagram')?.textContent || li.textContent).trim().toLowerCase();
       if (word) found.add(word);
     });
   }
@@ -47,7 +47,7 @@ function processWordList(document) {
       if (li.dataset.weProcessed) return;
       li.dataset.weProcessed = '1';
 
-      const wordText = li.textContent.trim().toLowerCase();
+      const wordText = (li.querySelector('.sb-anagram')?.textContent || li.textContent).trim().toLowerCase();
       if (!wordText || wordText.length < MIN_WORD_LENGTH) return;
 
       li.classList.add('we-word');
@@ -105,6 +105,24 @@ test('empty Set when no words', () => {
   assert.strictEqual(found.size, 0);
 });
 
+test('extracts single word from NYT sb-anagram + visually-hidden li', () => {
+  const dom = new JSDOM(`<ul class="sb-wordlist-items-pag">
+    <li><span class="sb-anagram" aria-hidden="true">mewl</span><span class="visually-hidden">mewl</span></li>
+  </ul>`);
+  const found = getFoundWords(dom.window.document);
+  assert.ok(found.has('mewl'), 'expected found set to contain "mewl"');
+  assert.ok(!found.has('mewlmewl'), 'expected found set NOT to contain doubled "mewlmewl"');
+});
+
+test('strips " (pangram)" suffix on pangram li', () => {
+  const dom = new JSDOM(`<ul class="sb-wordlist-items-pag">
+    <li><span class="sb-anagram pangram" aria-hidden="true">windmilled</span><span class="visually-hidden">windmilled (pangram)</span></li>
+  </ul>`);
+  const found = getFoundWords(dom.window.document);
+  assert.ok(found.has('windmilled'));
+  assert.ok(!found.has('windmilledwindmilled (pangram)'));
+});
+
 console.log('\nprocessWordList:');
 
 test('adds we-word class', () => {
@@ -141,6 +159,24 @@ test('marks as processed (idempotent)', () => {
 test('handles empty list', () => {
   const dom = new JSDOM('<ul class="sb-wordlist-items-pag"></ul>');
   processWordList(dom.window.document); // should not throw
+});
+
+test('aria-label uses sb-anagram word, not doubled textContent', () => {
+  const dom = new JSDOM(`<ul class="sb-wordlist-items-pag">
+    <li><span class="sb-anagram" aria-hidden="true">mewl</span><span class="visually-hidden">mewl</span></li>
+  </ul>`);
+  processWordList(dom.window.document);
+  const li = dom.window.document.querySelector('li');
+  assert.strictEqual(li.getAttribute('aria-label'), 'Look up mewl');
+});
+
+test('aria-label for pangram excludes " (pangram)" suffix', () => {
+  const dom = new JSDOM(`<ul class="sb-wordlist-items-pag">
+    <li><span class="sb-anagram pangram" aria-hidden="true">windmilled</span><span class="visually-hidden">windmilled (pangram)</span></li>
+  </ul>`);
+  processWordList(dom.window.document);
+  const li = dom.window.document.querySelector('li');
+  assert.strictEqual(li.getAttribute('aria-label'), 'Look up windmilled');
 });
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
