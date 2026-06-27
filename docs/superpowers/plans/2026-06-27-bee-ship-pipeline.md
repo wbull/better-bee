@@ -756,3 +756,22 @@ Then report to the user: the pipeline is installed, how to invoke it (`/ship-bee
 - The `claude-in-chrome` MCP tools may be deferred — load them via ToolSearch before the verifier uses them (see the agent's tool list).
 - If `node scripts/check-drift.mjs` reports pre-existing drift in the repo (Task 1 Step 5), raise it with the user as a separate fix — do not silently "fix" functions to make the guard pass.
 </content>
+
+---
+
+## Post-implementation amendments (2026-06-27)
+
+After the final whole-branch review, the hook design evolved beyond the Task 3
+code block above. The authoritative implementation is `scripts/ship-guard-hook.mjs`:
+
+- **Drift was removed from the hook** — it is advisory only and already surfaces via
+  `npm test` (which runs `check-drift.mjs`) and the verifier's PR body. A stderr
+  message on an exit-0 hook is dropped by Claude Code, so checking drift there was dead.
+- **A deterministic `main` backstop was added** — the hook now blocks any command that
+  pushes to / merges into `main` (`git push origin main`, `…:main`, `…refs/heads/main`,
+  any `git push`/`git merge` while HEAD is `main`, and `gh pr merge`). This gives the
+  pipeline's strongest invariant ("stop at a PR") a hard gate instead of agent prose.
+- **The version gate compares the staged index** (`git show :better_bee.user.js`) against
+  `HEAD`, not the working tree, so it can't be bypassed or false-tripped.
+
+See `.superpowers/sdd/progress.md` for the task-by-task ledger and accepted minor follow-ups.
