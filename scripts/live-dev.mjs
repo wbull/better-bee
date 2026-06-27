@@ -40,21 +40,54 @@ const browser = await puppeteer.launch({
   args: [`--window-size=${width},1000`, '--no-first-run', '--no-default-browser-check'],
 });
 
-const [page] = await browser.pages();
+let page = (await browser.pages())[0] || (await browser.newPage());
 
-async function loadAndInject(reason) {
+// Reloads must never overlap: a second reload firing mid-flight detaches the
+// first one's frame and wedges the tab permanently. Serialize with a single
+// in-flight flag and coalesce extra triggers into one trailing re-run.
+let reloading = false;
+let pending = false;
+
+async function ensurePage() {
+  if (!page || page.isClosed()) page = await browser.newPage();
+  return page;
+}
+
+async function injectOnce(reason) {
+  const pg = await ensurePage();
   log(`${reason} — loading ${URL}`);
-  await page.goto(URL, { waitUntil: 'networkidle2', timeout: 60000 });
+  await pg.goto(URL, { waitUntil: 'networkidle2', timeout: 60000 });
   // Dismiss NYT's intro/subscription "moment" if present.
-  await page.evaluate(() => {
+  await pg.evaluate(() => {
     const b = [...document.querySelectorAll('button, .pz-moment__button')]
       .find((el) => /^(play|continue|no thanks|maybe later)\b/i.test((el.textContent || '').trim()));
     if (b) b.click();
   }).catch(() => {});
-  await page.waitForSelector('.sb-hive', { timeout: 30000 });
-  await page.addScriptTag({ content: readFileSync(SHIMS, 'utf8') });
-  await page.addScriptTag({ content: readFileSync(USERSCRIPT, 'utf8') });
+  await pg.waitForSelector('.sb-hive', { timeout: 30000 });
+  await pg.addScriptTag({ content: readFileSync(SHIMS, 'utf8') });
+  await pg.addScriptTag({ content: readFileSync(USERSCRIPT, 'utf8') });
   log('injected gm-shims + better_bee.user.js — interact away.');
+}
+
+async function loadAndInject(reason) {
+  if (reloading) { pending = true; return; } // coalesce; trailing run picks up the latest save
+  reloading = true;
+  try {
+    do {
+      pending = false;
+      try {
+        await injectOnce(reason);
+      } catch (e) {
+        // A detached/closed page can't be reused — drop it so the next pass
+        // starts from a fresh tab instead of erroring forever.
+        log(`reload error: ${e.message} — recreating tab`);
+        try { if (page && !page.isClosed()) await page.close(); } catch {}
+        page = null;
+      }
+    } while (pending);
+  } finally {
+    reloading = false;
+  }
 }
 
 await loadAndInject('start');
@@ -63,7 +96,7 @@ await loadAndInject('start');
 let timer = null;
 watch(USERSCRIPT, () => {
   clearTimeout(timer);
-  timer = setTimeout(() => loadAndInject('change detected').catch((e) => log(`reload error: ${e.message}`)), 250);
+  timer = setTimeout(() => loadAndInject('change detected'), 250);
 });
 log('watching better_bee.user.js for changes. Ctrl+C to quit.');
 
