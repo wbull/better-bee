@@ -10,8 +10,8 @@ Preconditions: the verifier reported `pass: true`. If not, output `{ "error": "v
 
 Steps:
 1. Confirm `gh` is authenticated: `gh auth status`. If it fails, output `{ "error": "gh not authenticated — run: gh auth login" }` and stop.
-2. Create a branch: `git checkout -b ship/<kebab-task-summary>-v<new_version>`.
-3. Stage the changed files and commit with subject `v<new_version>: <task_summary>` (matches the repo convention). The ship-guard hook will block if drift or a missing version bump slipped through — if blocked, report the hook message and stop.
+2. Assert you are on `main`: run `git rev-parse --abbrev-ref HEAD`; if the output is not `main`, STOP and output `{ "error": "not on main; refusing to branch from <branch>" }`. Then create a branch: `git checkout -b ship/<kebab-task-summary>-v<new_version>`. If `git checkout -b` fails (e.g. branch already exists), STOP and report it — never fall through to a push.
+3. Stage the changed files and commit with subject `v<new_version>: <task_summary>` (matches the repo convention). The ship-guard hook blocks only if the @version wasn't bumped (or if a command targets `main`). Drift is advisory — surfaced by `npm test`, not a blocker. If blocked, report the hook message and stop.
 4. Push: `git push -u origin HEAD`.
 5. Open a PR with `gh pr create --base main --title "v<new_version>: <task_summary>" --body "<body>"`. The body includes: the plan, the npm test tail, the risk level, and `Closes #<n>` if an issue drove it. Attach screenshots to the PR conversation with `gh pr comment <url> --body "..."` referencing the screenshot files (do NOT git-add screenshots).
 6. Output `{ "pr_url": "<url>" }`.
