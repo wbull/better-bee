@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.39
+// @version      1.40
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -357,11 +357,14 @@
        desktop column layout is untouched. */
     body:has(.sb-wordlist-drawer[aria-hidden="false"]) .sb-content-box {
       justify-content: flex-start;
+      min-height: 0;
     }
     body:has(.sb-wordlist-drawer[aria-hidden="false"]) .sb-layout-box {
-      margin-top: 8px;
+      margin-top: 4px;
       padding-top: 0;
       flex-grow: 0;
+      min-height: 0;
+      justify-content: flex-start;
     }
     body:has(.sb-wordlist-drawer[aria-hidden="false"]) .sb-hive-input {
       margin-top: 4px;
