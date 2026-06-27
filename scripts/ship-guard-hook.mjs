@@ -28,6 +28,7 @@ const targetsMain =
   /\bgh\s+pr\s+merge\b/.test(cmd) ||
   /\bgit\s+push\b[^\n]*\borigin\s+main\b/.test(cmd) ||
   /\bgit\s+push\b[^\n]*:\s*main\b/.test(cmd) ||
+  /\bgit\s+push\b[^\n]*refs\/heads\/main\b/.test(cmd) || // explicit refspec form
   (/\bgit\s+push\b/.test(cmd) && onMain) ||
   (/\bgit\s+merge\b/.test(cmd) && onMain)
 if (targetsMain) {
@@ -43,9 +44,13 @@ if (/\bgit\s+commit\b/.test(cmd)) {
   let head, index
   try { head = git(['show', 'HEAD:better_bee.user.js']) } catch { process.exit(0) } // new file
   try { index = git(['show', ':better_bee.user.js']) } catch { process.exit(0) }
-  if (needsBump(head, index)) {
-    console.error('ship-guard blocked this commit:\n  - version: @version not bumped despite changes to better_bee.user.js')
-    process.exit(2)
-  }
+  // Wrap the sole hard gate so an unexpected throw fails closed-to-allow (exit 0),
+  // never an undefined exit-1 the hook contract doesn't define.
+  try {
+    if (needsBump(head, index)) {
+      console.error('ship-guard blocked this commit:\n  - version: @version not bumped despite changes to better_bee.user.js')
+      process.exit(2)
+    }
+  } catch { process.exit(0) }
 }
 process.exit(0)
