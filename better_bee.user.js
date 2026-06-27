@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.39
+// @version      1.40
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -351,21 +351,16 @@
       .we-hint-toast-clue { max-width: min(360px, 85vw); }
     }
 
-    /* Drawer-mode (zoomed / narrow viewport): pull the input + hive up so
-       the word ribbon, "Type or click", and full hex grid fit above the
-       fold. Scoped via :has() on NYT's own drawer-state attribute so the
-       desktop column layout is untouched. */
-    body:has(.sb-wordlist-drawer[aria-hidden="false"]) .sb-content-box {
-      justify-content: flex-start;
-    }
-    body:has(.sb-wordlist-drawer[aria-hidden="false"]) .sb-layout-box {
-      margin-top: 8px;
-      padding-top: 0;
+    /* Collapse the empty vertical band above the "Type or click" prompt in the
+       zoomed / narrow layout so the hex grid stays above the fold. NYT gives
+       .sb-controls-box flex-grow:1, so it expands to fill the leftover column
+       height and vertically centers the hive, pushing the prompt and grid down.
+       Dropping the growth lets it size to its content. Verified on the live
+       page: at narrow/zoomed widths this lifts the hive ~166px and brings the
+       full grid above the fold; at desktop width it is a no-op (.sb-controls-box
+       does not grow there), so no media-query / :has() scoping is needed. */
+    .sb-controls-box {
       flex-grow: 0;
-    }
-    body:has(.sb-wordlist-drawer[aria-hidden="false"]) .sb-hive-input {
-      margin-top: 4px;
-      margin-bottom: 4px;
     }
   `);
 
