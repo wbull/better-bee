@@ -3,6 +3,7 @@
     "test": "node test_hints.mjs && node test_pure_edge_cases.mjs && node test_build_hint_queue.mjs && node test_build_panel_content.mjs && node test_dom_functions.mjs && node test_next_hint.mjs && node scripts/check-drift.test.mjs && node scripts/check-version-bump.test.mjs && node scripts/check-drift.mjs"
   },
   "devDependencies": {
-    "jsdom": "^28.1.0"
+    "jsdom": "^28.1.0",
+    "puppeteer-core": "^25.2.1"
   }
 }
