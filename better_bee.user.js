@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.41
+// @version      1.42
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -55,6 +55,17 @@
     mwApiKey = '';
     GM_setValue('mw_api_key', '');
     apiCache.clear();
+  });
+  // Label reflects state at registration; refreshes on next page load (same
+  // low-tech fidelity as the API-key commands above).
+  GM_registerMenuCommand(
+    `Update news: ${GM_getValue('bb_update_news_optout', false) ? 'Off — click to enable' : 'On — click to disable'}`,
+    () => { GM_setValue('bb_update_news_optout', !GM_getValue('bb_update_news_optout', false)); }
+  );
+  GM_registerMenuCommand('Preview update news', () => {
+    if (onboardingActive) return; // never stack on an open overlay
+    // Pure preview: render every noted version; never writes last-seen or opt-out.
+    showUpdateSplash(collectUnseenNotes('0', '9999', RELEASE_NOTES));
   });
 
   // ─── Shared: CSS ────────────────────────────────────────────────────
@@ -346,6 +357,44 @@
     .ob-cta:hover { background: #e6bc00; }
     .ob-cta:focus { outline: 2px solid #000; outline-offset: 2px; }
 
+    /* Update splash: release-notes sections (reuses .ob-* panel chrome) */
+    .us-notes { margin: 8px 0 20px; }
+    .us-version-heading {
+      font-size: clamp(16px, 2.3vw, 18px);
+      font-weight: 700;
+      margin: 12px 0 4px;
+    }
+    .us-version-block:first-child .us-version-heading { margin-top: 0; }
+    .us-section-title {
+      font-size: clamp(13px, 1.8vw, 14px);
+      font-weight: 600;
+      color: #555;
+      margin: 8px 0 2px;
+    }
+    .us-note-list {
+      list-style: disc;
+      margin: 0 0 8px;
+      padding-left: 20px;
+    }
+    .us-note-list li {
+      font-size: clamp(14px, 2vw, 15px);
+      padding: 2px 0;
+      line-height: 1.4;
+    }
+    .us-optout {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 6px;
+      background: none;
+      border: none;
+      color: #888;
+      font-size: clamp(12px, 1.6vw, 13px);
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .us-optout:hover { color: #555; }
+
     @media (max-width: 600px) {
       .we-tooltip { max-width: min(280px, 90vw); }
       .we-hint-toast-clue { max-width: min(360px, 85vw); }
@@ -528,6 +577,183 @@
     }, 200);
     setTimeout(() => clearInterval(obTimer), 15000);
   }
+
+  // ─── Update Splash (post-update "what's new" news) ─────────────────
+  // Per-release opt-in: a version with no entry here updates silently.
+  // Keep only the ~5 newest versions; prune older entries when shipping.
+  const RELEASE_NOTES = {
+    '1.42': {
+      features: [
+        'Update news: see what changed when Better Bee updates',
+        'Re-read these notes anytime: Tampermonkey menu → Preview update news',
+      ],
+      fixes: [],
+    },
+  };
+
+  // Segment-wise numeric compare: '1.9' < '1.10' (parseFloat would get this wrong).
+  function compareVersions(a, b) {
+    const as = String(a).split('.');
+    const bs = String(b).split('.');
+    const len = Math.max(as.length, bs.length);
+    for (let i = 0; i < len; i++) {
+      const an = Number(as[i] || 0);
+      const bn = Number(bs[i] || 0);
+      if (an !== bn) return an < bn ? -1 : 1;
+    }
+    return 0;
+  }
+
+  // Noted versions with lastSeen < v <= current, newest first.
+  function collectUnseenNotes(lastSeen, current, notes) {
+    return Object.keys(notes)
+      .filter(v => compareVersions(lastSeen, v) < 0 && compareVersions(v, current) <= 0)
+      .sort((a, b) => compareVersions(b, a))
+      .map(v => ({
+        version: v,
+        features: notes[v].features || [],
+        fixes: notes[v].fixes || [],
+      }));
+  }
+
+  // createElement + textContent only — note strings must never hit innerHTML.
+  function buildSplashContent(doc, entries) {
+    const container = doc.createElement('div');
+    container.className = 'us-notes';
+    for (const entry of entries) {
+      const block = doc.createElement('div');
+      block.className = 'us-version-block';
+      const heading = doc.createElement('h3');
+      heading.className = 'us-version-heading';
+      heading.textContent = `v${entry.version}`;
+      block.appendChild(heading);
+      const sections = [
+        ['✨ New', entry.features],
+        ['🐛 Fixed', entry.fixes],
+      ];
+      for (const [label, items] of sections) {
+        if (!items || items.length === 0) continue;
+        const title = doc.createElement('div');
+        title.className = 'us-section-title';
+        title.textContent = label;
+        block.appendChild(title);
+        const list = doc.createElement('ul');
+        list.className = 'us-note-list';
+        for (const item of items) {
+          const li = doc.createElement('li');
+          li.textContent = item;
+          list.appendChild(li);
+        }
+        block.appendChild(list);
+      }
+      container.appendChild(block);
+    }
+    return container;
+  }
+
+  // Shared render path for the normal post-update flow and the menu preview.
+  // `onShown` (optional) runs when the splash becomes visible — the normal
+  // flow uses it to mark the version seen; the preview passes nothing.
+  function showUpdateSplash(entries, onShown) {
+    if (!entries || entries.length === 0) return;
+
+    const usOverlay = document.createElement('div');
+    usOverlay.className = 'ob-overlay';
+    usOverlay.setAttribute('role', 'dialog');
+    usOverlay.setAttribute('aria-modal', 'true');
+    usOverlay.setAttribute('aria-label', 'Better Bee update news');
+    usOverlay.innerHTML = `
+      <div class="ob-panel">
+        <button class="ob-close" aria-label="Close">&times;</button>
+        <h2 class="ob-title"></h2>
+        <button class="ob-cta">Got it</button>
+        <button class="us-optout" type="button">Don't show update news again</button>
+      </div>`;
+    usOverlay.querySelector('.ob-title').textContent =
+      `Better Bee updated — v${entries[0].version}`;
+    const usCtaBtn = usOverlay.querySelector('.ob-cta');
+    usOverlay.querySelector('.ob-panel')
+      .insertBefore(buildSplashContent(document, entries), usCtaBtn);
+    usOverlay.style.display = 'none';
+    document.body.appendChild(usOverlay);
+
+    function dismissUpdateSplash() {
+      onboardingActive = false;
+      usOverlay.classList.remove('we-visible');
+      setTimeout(() => usOverlay.remove(), 200);
+    }
+
+    usCtaBtn.addEventListener('click', dismissUpdateSplash);
+    usOverlay.querySelector('.ob-close').addEventListener('click', dismissUpdateSplash);
+    usOverlay.querySelector('.us-optout').addEventListener('click', () => {
+      GM_setValue('bb_update_news_optout', true);
+      dismissUpdateSplash();
+    });
+    usOverlay.addEventListener('click', e => {
+      if (e.target === usOverlay) dismissUpdateSplash();
+    });
+    usOverlay.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        dismissUpdateSplash();
+        return;
+      }
+      // Focus trap
+      if (e.key !== 'Tab') return;
+      const focusables = usOverlay.querySelectorAll(
+        'button, [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    });
+
+    // Show after puzzle DOM is ready (same wait pattern as onboarding)
+    const usTimer = setInterval(() => {
+      if (document.querySelector('.sb-hive-input-content')) {
+        clearInterval(usTimer);
+        setTimeout(() => {
+          // Modules that suppress behavior under the onboarding modal treat
+          // the splash identically; seen-on-render so a crash can't re-show.
+          onboardingActive = true;
+          if (onShown) onShown();
+          usOverlay.style.display = 'flex';
+          requestAnimationFrame(() => {
+            usOverlay.classList.add('we-visible');
+            usCtaBtn.focus();
+          });
+        }, 500);
+      }
+    }, 200);
+    setTimeout(() => clearInterval(usTimer), 15000);
+  }
+
+  (function maybeShowUpdateSplash() {
+    const current = GM_info?.script?.version;
+    if (!current) return;
+    const lastSeen = GM_getValue('bb_last_seen_version', null);
+    if (lastSeen === null) {
+      // First install: onboarding covers the intro; seed silently.
+      GM_setValue('bb_last_seen_version', current);
+      return;
+    }
+    // Keep last-seen advancing while opted out so re-enabling shows no backlog.
+    if (GM_getValue('bb_update_news_optout', false) || onboardingActive) {
+      GM_setValue('bb_last_seen_version', current);
+      return;
+    }
+    const entries = collectUnseenNotes(lastSeen, current, RELEASE_NOTES);
+    if (entries.length === 0) {
+      GM_setValue('bb_last_seen_version', current);
+      return;
+    }
+    showUpdateSplash(entries, () => GM_setValue('bb_last_seen_version', current));
+  })();
 
   // ─── Module 3: Visual Feedback Emojis ──────────────────────────────
   const emojiEl = document.createElement('img');
