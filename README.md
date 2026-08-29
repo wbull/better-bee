@@ -15,6 +15,7 @@ Enhancements for the [NYT Spelling Bee](https://www.nytimes.com/puzzles/spelling
 - **Hint system** -- Press `?` to cycle through hints for unfound words (first 2 letters + word length)
 - **Bee Buddy link** -- The bee icon opens [Spelling Bee Buddy](https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html) in a new tab
 - **Dock hiding** -- Removes the NYT promotional dock on all NYT pages
+- **Update news** -- After an auto-update, a one-time splash shows what changed (toggle it off/on via the Tampermonkey menu; re-read anytime via Tampermonkey menu → *Preview update news*)
 
 ## Install
 
@@ -33,3 +34,7 @@ Updates are delivered automatically via Tampermonkey/Violentmonkey.
 | Press `?` | Toggle hint cycle (e.g. `AM.. 5`) |
 | Click the bee | Opens Spelling Bee Buddy in a new tab |
 | Press `Escape` | Closes any open overlay |
+
+## Testing the splash
+
+`npm run live:splash` runs a headless five-scenario check of the update-news splash against the live puzzle page (add `--show` to open a visible browser pre-seeded as an old install for manual poking).
