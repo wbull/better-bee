@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.40
+// @version      1.41
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -389,6 +389,7 @@
   let hintIndex = 0;
   let hintDismissing = false;
   let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
+  let cluePromise = null;    // In-flight clue fetch, shared so prefetch + "." don't double-request
   let lastPuzzleId = null;   // Tracks current puzzle to detect navigation to back-catalog
   let onboardingActive = false;
 
@@ -670,22 +671,46 @@
   tooltip.style.display = 'none';
 
   // API helpers
-  function gmFetch(url) {
+  const GM_FETCH_TIMEOUT_MS = 2500;
+
+  // Watchdog timer is ours, not the extension's: Tampermonkey MV3 on Chrome can
+  // drop GM_xmlhttpRequest callbacks entirely (no onload OR onerror), which
+  // would otherwise hang callers forever.
+  function gmRequest(url) {
     return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
-        method: 'GET',
-        url,
-        onload: res => {
-          if (res.status >= 200 && res.status < 300) {
-            try { resolve(JSON.parse(res.responseText)); }
-            catch { reject(new Error('Invalid JSON')); }
-          } else {
-            reject(new Error(`HTTP ${res.status}`));
-          }
-        },
-        onerror: () => reject(new Error('Network error')),
-      });
+      const timer = setTimeout(() => reject(new Error('GM timeout')), GM_FETCH_TIMEOUT_MS);
+      const ok = v => { clearTimeout(timer); resolve(v); };
+      const fail = e => { clearTimeout(timer); reject(e); };
+      try {
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url,
+          timeout: GM_FETCH_TIMEOUT_MS,
+          onload: res => {
+            if (res.status >= 200 && res.status < 300) {
+              try { ok(JSON.parse(res.responseText)); }
+              catch { fail(new Error('Invalid JSON')); }
+            } else {
+              fail(new Error(`HTTP ${res.status}`));
+            }
+          },
+          onerror: () => fail(new Error('Network error')),
+          ontimeout: () => fail(new Error('GM timeout')),
+        });
+      } catch (e) { fail(e); }
     });
+  }
+
+  async function gmFetch(url) {
+    try {
+      return await gmRequest(url);
+    } catch {
+      // Every host we call serves Access-Control-Allow-Origin: *, so page
+      // fetch works when the GM transport is broken or slow.
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
   }
 
   function fetchDictionary(word) {
@@ -720,15 +745,21 @@
 
   async function fetchClues() {
     if (clueCache) return clueCache;
-    try {
-      const puzzleId = unsafeWindow.gameData.today.id;
-      const url = `https://static01.nyt.com/newsgraphics/2023-01-18-spelling-bee-buddy/clues/${puzzleId}.json`;
-      const data = await gmFetch(url).catch(() => null);
-      if (data && Array.isArray(data)) {
-        clueCache = new Map(data.map(c => [c.word, c]));
-      }
-    } catch { /* silent fail — Level 2 will show fallback */ }
-    return clueCache;
+    if (!cluePromise) {
+      cluePromise = (async () => {
+        try {
+          const puzzleId = unsafeWindow.gameData.today.id;
+          const url = `https://static01.nyt.com/newsgraphics/2023-01-18-spelling-bee-buddy/clues/${puzzleId}.json`;
+          const data = await gmFetch(url).catch(() => null);
+          if (data && Array.isArray(data)) {
+            clueCache = new Map(data.map(c => [c.word, c]));
+          }
+        } catch { /* silent fail — Level 2 will show fallback */ }
+        cluePromise = null;
+        return clueCache;
+      })();
+    }
+    return cluePromise;
   }
 
   function getMwAudioUrl(audio) {
@@ -1047,7 +1078,8 @@
     const currentId = unsafeWindow.gameData?.today?.id;
     if (currentId && currentId !== lastPuzzleId) {
       lastPuzzleId = currentId;
-      clueCache = null;  // Invalidate clues for old puzzle
+      clueCache = null;   // Invalidate clues for old puzzle
+      cluePromise = null; // Drop any in-flight fetch for the old puzzle too
     }
 
     const answers = getAnswers();
@@ -1106,6 +1138,10 @@
   async function expandHint() {
     if (!hintActive || hintIndex === 0 || hintIndex > hintQueue.length) return;
     const entry = hintQueue[hintIndex - 1];
+    // Expand with a loading state BEFORE awaiting: the clue fetch can stall
+    // (see gmRequest), and "." must always visibly respond.
+    hintToastClue.textContent = '\u2026';
+    hintToast.classList.add('we-expanded');
     const clues = await fetchClues();
     if (!hintActive || hintQueue[hintIndex - 1] !== entry) return;
     const clue = clues?.get(entry.word);
@@ -1123,7 +1159,8 @@
     } else {
       hintToastClue.textContent = '(no clue available)';
     }
-    hintToast.classList.add('we-expanded');
+    // No re-add of we-expanded here: if the user collapsed while loading,
+    // the resolved clue must not pop the panel back open.
   }
 
   function collapseHint() {
