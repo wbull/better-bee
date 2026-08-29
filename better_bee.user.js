@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.42
+// @version      1.43
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -582,6 +582,12 @@
   // Per-release opt-in: a version with no entry here updates silently.
   // Keep only the ~5 newest versions; prune older entries when shipping.
   const RELEASE_NOTES = {
+    '1.43': {
+      features: [],
+      fixes: [
+        '⌨️ Chrome: pressing "." to reveal a hint\'s clue text no longer hangs — the clue loads reliably now (quietly fixed in v1.41) 🎉',
+      ],
+    },
     '1.42': {
       features: [
         'Update news: see what changed when Better Bee updates',
