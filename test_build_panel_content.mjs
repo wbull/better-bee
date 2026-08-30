@@ -29,6 +29,26 @@ function getMwAudioUrl(audio) {
   return `https://media.merriam-webster.com/audio/prons/en/us/mp3/${subdir}/${audio}.mp3`;
 }
 
+const GRAMMAR_LABELS = new Set([
+  'uncountable', 'countable', 'usually uncountable', 'usually countable',
+  'transitive', 'intransitive', 'ambitransitive', 'ditransitive',
+  'reflexive', 'impersonal', 'auxiliary', 'copulative',
+  'comparable', 'not comparable', 'uncomparable',
+  'plural only', 'singular only', 'usually plural', 'usually singular',
+]);
+function stripGrammarLabels(text) {
+  const m = text.match(/^\(([^)]*)\)\s*([\s\S]*)$/);
+  if (!m) return text;
+  const kept = m[1].split(',').map(t => t.trim()).filter(t => !GRAMMAR_LABELS.has(t.toLowerCase()));
+  return (kept.length ? `(${kept.join(', ')}) ` : '') + m[2];
+}
+
+function pickWikiThumbnail(summary, word) {
+  if (!summary || summary.type !== 'standard') return '';
+  if ((summary.titles?.canonical || '').toLowerCase() !== word.toLowerCase()) return '';
+  return summary.thumbnail?.source || '';
+}
+
 function describeFetchError(e) {
   const status = e && e.status;
   if (status === 429) return 'Dictionary rate limit hit (HTTP 429)';
@@ -97,7 +117,7 @@ function buildTooltipContent(word, dictResult) {
       html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
     }
     for (const def of defs) {
-      html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def.text)}</div>`;
+      html += `<div class="we-tooltip-def">&bull; ${escapeHTML(stripGrammarLabels(def.text))}</div>`;
     }
   } else if (dictResult.status === 'fulfilled' && dictResult.source === 'wiktionary' && dictResult.value && Array.isArray(dictResult.value.en)) {
     const entry = dictResult.value.en[0] || {};
@@ -110,7 +130,7 @@ function buildTooltipContent(word, dictResult) {
       .filter(Boolean)
       .slice(0, 2);
     for (const text of defs) {
-      html += `<div class="we-tooltip-def">&bull; ${escapeHTML(text)}</div>`;
+      html += `<div class="we-tooltip-def">&bull; ${escapeHTML(stripGrammarLabels(text))}</div>`;
     }
   } else if (dictResult.status === 'rejected' && !dictResult.notFound) {
     html += `<div class="we-tooltip-nodef">${escapeHTML(dictResult.errorText || 'Couldn’t load definition')} — click the word to retry.</div>`;
@@ -181,6 +201,69 @@ test('Free-API failure shows the Merriam-Webster key tip; MW failure does not', 
   assert.ok(free.includes('Merriam-Webster key'));
   const mw = buildTooltipContent('xyzzy', erroredDict('Network error reaching the dictionary', 'mw'));
   assert.ok(!mw.includes('we-tooltip-tip'));
+});
+
+// ─── stripGrammarLabels tests ──────────────────────────────────────
+
+console.log('\nstripGrammarLabels:');
+
+test('pure grammar label is removed entirely', () => {
+  assert.strictEqual(stripGrammarLabels('(uncountable) The seed of this tree.'), 'The seed of this tree.');
+});
+
+test('mixed label keeps the context part only', () => {
+  assert.strictEqual(stripGrammarLabels('(uncountable, arithmetic) The operation of adding.'), '(arithmetic) The operation of adding.');
+});
+
+test('context-only labels are kept', () => {
+  assert.strictEqual(stripGrammarLabels('(finance) A bank account.'), '(finance) A bank account.');
+  assert.strictEqual(stripGrammarLabels('(chiefly in the negative) A jot.'), '(chiefly in the negative) A jot.');
+});
+
+test('definition without a leading parenthetical passes through', () => {
+  assert.strictEqual(stripGrammarLabels('To move swiftly.'), 'To move swiftly.');
+});
+
+test('renders stripped in the Datamuse branch', () => {
+  const html = buildTooltipContent('annatto', datamuseDict({
+    word: 'annatto', tags: ['n'],
+    defs: ['n\t(uncountable) The seed of this tree. ', 'n\t(uncountable, cooking) A dye. '],
+  }));
+  assert.ok(html.includes('&bull; The seed of this tree.'));
+  assert.ok(html.includes('(cooking) A dye.'));
+  assert.ok(!html.includes('uncountable'));
+});
+
+// ─── pickWikiThumbnail tests ───────────────────────────────────────
+
+console.log('\npickWikiThumbnail:');
+
+const wikiSummary = (over = {}) => ({
+  type: 'standard',
+  titles: { canonical: 'Tooth' },
+  thumbnail: { source: 'https://upload.wikimedia.org/t/tooth.png' },
+  ...over,
+});
+
+test('standard article with matching title and thumbnail → URL (case-insensitive)', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary(), 'tooth'), 'https://upload.wikimedia.org/t/tooth.png');
+});
+
+test('disambiguation page → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary({ type: 'disambiguation' }), 'tooth'), '');
+});
+
+test('title mismatch (redirect to a different article) → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary({ titles: { canonical: 'Anita_Doth' } }), 'doth'), '');
+});
+
+test('article without a thumbnail → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary({ thumbnail: undefined }), 'tooth'), '');
+});
+
+test('null/missing summary → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(null, 'tooth'), '');
+  assert.strictEqual(pickWikiThumbnail({}, 'tooth'), '');
 });
 
 // ─── describeFetchError tests ──────────────────────────────────────
