@@ -22,6 +22,15 @@ const apiCache = new Map();
 
 // --- Functions under test (mirrored from better_bee.user.js) ---
 
+function describeFetchError(e) {
+  const status = e && e.status;
+  if (status === 429) return 'Dictionary rate limit hit (HTTP 429)';
+  if (status >= 500) return `Dictionary service is down (HTTP ${status})`;
+  if (status) return `Dictionary error (HTTP ${status})`;
+  if (e && /timeout|abort/i.test(`${e.name} ${e.message}`)) return 'Dictionary request timed out';
+  return 'Network error reaching the dictionary';
+}
+
 const defInflight = new Map(); // word → in-flight promise: dedups prefetch vs click
 
 function getDefinition(word) {
@@ -30,12 +39,17 @@ function getDefinition(word) {
   if (defInflight.has(key)) return defInflight.get(key);
   const p = (async () => {
     try {
-      const result = await fetchDictionary(word);
-      const dictResult = { status: 'fulfilled', value: result, source: mwApiKey ? 'mw' : 'free' };
+      const { source, value } = await fetchDictionary(word);
+      const dictResult = { status: 'fulfilled', value, source };
       apiCache.set(key, { dictResult });
       return dictResult;
     } catch (e) {
-      const dictResult = { status: 'rejected', notFound: !!(e && e.status === 404) };
+      const dictResult = {
+        status: 'rejected',
+        notFound: !!(e && e.status === 404),
+        source: mwApiKey ? 'mw' : 'free',
+        errorText: describeFetchError(e),
+      };
       if (dictResult.notFound) apiCache.set(key, { dictResult });
       return dictResult;
     } finally {
@@ -89,7 +103,7 @@ function deferred() {
 }
 
 const notFoundError = () => Object.assign(new Error('HTTP 404'), { status: 404 });
-const ENTRY = [{ word: 'iota' }];
+const ENTRY = { source: 'datamuse', value: [{ word: 'iota', defs: ['n\tx'] }] };
 
 // --- Tests ---
 
@@ -107,6 +121,8 @@ await test('concurrent calls dedup to one fetch and share the settlement', async
   assert.strictEqual(calls, 1);
   assert.strictEqual(ra, rb);
   assert.strictEqual(ra.status, 'fulfilled');
+  assert.strictEqual(ra.source, 'datamuse');
+  assert.deepStrictEqual(ra.value, ENTRY.value);
 });
 
 await test('success is cached — second call does not refetch', async () => {
@@ -133,11 +149,13 @@ await test('regression: transient failure is NOT cached — a later call retries
   assert.strictEqual(second.status, 'fulfilled');
 });
 
-await test('HTTP 500 is transient too — not cached', async () => {
+await test('HTTP 500 is transient too — not cached, with a definitive cause text', async () => {
   reset();
   fetchDictionary = async () => { throw Object.assign(new Error('HTTP 500'), { status: 500 }); };
   const r = await getDefinition('iota');
   assert.strictEqual(r.notFound, false);
+  assert.strictEqual(r.errorText, 'Dictionary service is down (HTTP 500)');
+  assert.strictEqual(r.source, 'free');
   assert.strictEqual(apiCache.size, 0);
 });
 

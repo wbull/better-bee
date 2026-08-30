@@ -4,13 +4,15 @@
 // stuck "Loading…".
 //
 // Modes (3rd arg):
-//   hang       — GM_xmlhttpRequest callbacks silently dropped (TM MV3 regression);
-//                the page-fetch fallback must still deliver the definition.
-//   ratelimit  — GM leg answers HTTP 429; the retry message must render and NO
-//                page fetch to api.dictionaryapi.dev may fire (no load doubling).
+//   hang         — GM_xmlhttpRequest callbacks silently dropped (TM MV3 regression);
+//                  the page-fetch fallback must still deliver the definition.
+//   ratelimit    — GM leg answers HTTP 429; the retry message must render and NO
+//                  page fetch to either chain host may fire (no load doubling).
+//   fallbackchain — Datamuse answers HTTP 503; the script must fall through to
+//                  Wiktionary and still resolve a definition.
 //
 // Usage:
-//   node scripts/live-check-definition.mjs [userscript-path] [width] [hang|ratelimit]
+//   node scripts/live-check-definition.mjs [userscript-path] [width] [hang|ratelimit|fallbackchain]
 
 import puppeteer from 'puppeteer-core';
 import { readFileSync } from 'node:fs';
@@ -24,7 +26,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2).filter(Boolean);
 const hangGm = args.includes('hang');
 const rateLimit = args.includes('ratelimit');
-const rest = args.filter((a) => a !== 'hang' && a !== 'ratelimit');
+const fallbackChain = args.includes('fallbackchain');
+if ([hangGm, rateLimit, fallbackChain].filter(Boolean).length > 1) {
+  console.error('modes are mutually exclusive: pass at most one of hang|ratelimit|fallbackchain');
+  process.exit(2);
+}
+const rest = args.filter((a) => a !== 'hang' && a !== 'ratelimit' && a !== 'fallbackchain');
 const userscript = readFileSync(resolve(rest.find((a) => !/^\d+$/.test(a)) || `${ROOT}/better_bee.user.js`), 'utf8');
 const width = Number(rest.find((a) => /^\d+$/.test(a)) || 1100);
 const shims = readFileSync(resolve(ROOT, '.claude/snippets/gm-shims.js'), 'utf8');
@@ -39,7 +46,7 @@ try {
   const page = await browser.newPage();
   const dictRequests = [];
   page.on('request', (req) => {
-    if (req.url().includes('api.dictionaryapi.dev')) dictRequests.push(req.url());
+    if (/api\.datamuse\.com|en\.wiktionary\.org/.test(req.url())) dictRequests.push(req.url());
   });
 
   await page.setViewport({ width, height: 920 });
@@ -52,6 +59,15 @@ try {
   await sleep(1500);
   await page.waitForSelector('.sb-hive', { timeout: 20000 });
 
+  // NYT sometimes opens a "Spelling Bee badges" tip popover (immediately, or a
+  // beat later) that steals keyboard focus, silently swallowing the typed
+  // answer. dismissBadgesPopover() is re-run right before typing too.
+  const dismissBadgesPopover = () => page.evaluate(() => {
+    document.querySelector('[class*="Popover-module_popover__x"]')?.click();
+  });
+  await dismissBadgesPopover();
+  await sleep(300);
+
   await page.addScriptTag({ content: shims });
   if (hangGm) {
     // Request silently vanishes: no onload, no onerror — like broken TM MV3.
@@ -61,13 +77,51 @@ try {
     // GM leg gets a definitive server answer; gmFetch must NOT re-issue it.
     await page.addScriptTag({ content: 'window.GM_xmlhttpRequest = (o) => o.onload({ status: 429, responseText: "" });' });
   }
+  if (fallbackChain) {
+    // Datamuse answers 503 so the script must fall through to Wiktionary.
+    await page.addScriptTag({ content: `
+      const realGm = window.GM_xmlhttpRequest;
+      window.GM_xmlhttpRequest = (o) => o.url.includes('api.datamuse.com')
+        ? o.onload({ status: 503, responseText: '' })
+        : realGm(o);
+    ` });
+  }
   await page.addScriptTag({ content: userscript });
   await sleep(1000);
 
-  // Submit the first answer so a decorated word exists in the list.
-  const word = await page.evaluate(() => window.gameData?.today?.answers?.[0] || '');
-  if (!word) throw new Error('gameData.today.answers unavailable');
+  // Submit a non-pangram answer so a decorated word exists in the list.
+  // Submitting the pangram triggers NYT's full-screen "Pangram!" congrats
+  // overlay, which blanks the puzzle DOM for several seconds and races the
+  // click/tooltip assertions below.
+  const { word, answersCount } = await page.evaluate(() => {
+    const { answers, pangrams } = window.gameData?.today || {};
+    return {
+      word: (answers || []).find((a) => !(pangrams || []).includes(a)) || '',
+      answersCount: (answers || []).length,
+    };
+  });
+  if (!word) {
+    throw new Error(answersCount > 0
+      ? 'no non-pangram answer available in gameData.today'
+      : 'gameData.today.answers unavailable');
+  }
+  await dismissBadgesPopover();
+  await page.click('.sb-hive-input-content'); // the word-display box, not a hive letter cell — guarantees keyboard focus
+  await sleep(200);
   await page.keyboard.type(word, { delay: 60 });
+  // A stray popover/overlay can still eat keystrokes; verify the word landed
+  // before submitting, and retry once rather than pressing Enter on nothing.
+  let typed = await page.evaluate(() => document.querySelector('.sb-hive-input-content')?.textContent || '');
+  if (!typed.toLowerCase().includes(word.toLowerCase())) {
+    await dismissBadgesPopover();
+    await page.click('.sb-hive-input-content');
+    await sleep(200);
+    await page.keyboard.type(word, { delay: 60 });
+    typed = await page.evaluate(() => document.querySelector('.sb-hive-input-content')?.textContent || '');
+  }
+  if (!typed.toLowerCase().includes(word.toLowerCase())) {
+    throw new Error(`Typed word did not register in hive input (got "${typed}")`);
+  }
   await page.keyboard.press('Enter');
   await page.waitForSelector('.we-word', { timeout: 10000 });
   await sleep(2500); // let the submit animation / emoji feedback clear the word
@@ -99,15 +153,17 @@ try {
   let pass;
   if (rateLimit) {
     pass = state.visible && !state.stuckLoading &&
-      state.nodefText.includes('retry') &&
+      state.nodefText.includes('rate limit') && state.nodefText.includes('retry') &&
       dictRequests.length === 0; // no page-fetch doubling on a real 429
+  } else if (fallbackChain) {
+    pass = state.visible && !state.stuckLoading && state.hasDef &&
+      dictRequests.some((u) => u.includes('en.wiktionary.org'));
   } else {
-    pass = state.visible && !state.stuckLoading &&
-      (state.hasDef || state.nodefText.length > 0);
+    pass = state.visible && !state.stuckLoading && state.hasDef;
   }
 
   console.log(JSON.stringify({
-    verdict: pass ? 'PASS' : 'FAIL', width, hangGm, rateLimit, word, ...state,
+    verdict: pass ? 'PASS' : 'FAIL', width, hangGm, rateLimit, fallbackChain, word, ...state,
     pageDictRequests: dictRequests.length,
   }, null, 2));
   process.exitCode = pass ? 0 : 1;

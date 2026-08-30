@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "test": "node test_hints.mjs && node test_gm_fetch_fallback.mjs && node test_definition_cache.mjs && node test_pure_edge_cases.mjs && node test_build_hint_queue.mjs && node test_build_panel_content.mjs && node test_dom_functions.mjs && node test_next_hint.mjs && node test_update_splash.mjs && node scripts/check-drift.test.mjs && node scripts/check-version-bump.test.mjs && node scripts/check-drift.mjs",
+    "test": "node test_hints.mjs && node test_gm_fetch_fallback.mjs && node test_definition_cache.mjs && node test_fetch_dictionary_chain.mjs && node test_pure_edge_cases.mjs && node test_build_hint_queue.mjs && node test_build_panel_content.mjs && node test_dom_functions.mjs && node test_next_hint.mjs && node test_update_splash.mjs && node scripts/check-drift.test.mjs && node scripts/check-version-bump.test.mjs && node scripts/check-drift.mjs",
     "live": "node scripts/live-dev.mjs",
     "live:splash": "node scripts/live-check-splash.mjs"
   },
