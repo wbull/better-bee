@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.44
+// @version      1.45
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -14,8 +14,9 @@
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
-// @connect      api.dictionaryapi.dev
+// @connect      api.datamuse.com
 // @connect      dictionaryapi.com
+// @connect      en.wiktionary.org
 // @connect      media.merriam-webster.com
 // @connect      static01.nyt.com
 // ==/UserScript==
@@ -156,6 +157,12 @@
       font-size: 13px;
       color: #999;
       margin: 4px 0;
+    }
+
+    .we-tooltip-tip {
+      font-size: 11px;
+      color: #888;
+      margin: 4px 0 0;
     }
 
     .we-tooltip-loading {
@@ -585,10 +592,17 @@
   // Per-release opt-in: a version with no entry here updates silently.
   // Keep only the ~5 newest versions; prune older entries when shipping.
   const RELEASE_NOTES = {
+    '1.45': {
+      features: [
+        '📚 New definition sources: Datamuse (with IPA pronunciation) backed by Wiktionary — replacing the outage-prone free API',
+      ],
+      fixes: [],
+    },
     '1.44': {
       features: [],
       fixes: [
         '📖 Word definitions are much more reliable: failed lookups now retry when you click the word instead of staying broken all session',
+        '🔍 Failed lookups now say why (rate limit, outage, timeout) and suggest the free Merriam-Webster key option',
         '🐝 The definition tooltip can no longer get stuck on "Loading…" or pop back open after you dismiss it',
       ],
     },
@@ -965,11 +979,42 @@
     }
   }
 
-  function fetchDictionary(word) {
+  async function fetchDictionary(word) {
     if (mwApiKey) {
-      return gmFetch(`https://dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(word)}?key=${encodeURIComponent(mwApiKey)}`);
+      const value = await gmFetch(`https://dictionaryapi.com/api/v3/references/collegiate/json/${encodeURIComponent(word)}?key=${encodeURIComponent(mwApiKey)}`);
+      return { source: 'mw', value };
     }
-    return gmFetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+    // Keyless chain: Datamuse (plain-text defs, one request) then Wiktionary
+    // REST. A Wiktionary 404 is the chain's definitive "word not found".
+    // Datamuse requires a (free) API key from 2027-01-01 — revisit before then.
+    let datamuseError = null;
+    try {
+      const dm = await gmFetch(`https://api.datamuse.com/words?sp=${encodeURIComponent(word)}&md=dpr&ipa=1&max=1`);
+      if (Array.isArray(dm) && dm[0] && dm[0].word === word.toLowerCase() && Array.isArray(dm[0].defs) && dm[0].defs.length) {
+        return { source: 'datamuse', value: dm };
+      }
+    } catch (e) { datamuseError = e; }
+    try {
+      const wk = await gmFetch(`https://en.wiktionary.org/api/rest_v1/page/definition/${encodeURIComponent(word)}`);
+      if (wk && Array.isArray(wk.en) && wk.en.length) return { source: 'wiktionary', value: wk };
+      const notFound = new Error('HTTP 404');
+      notFound.status = 404;
+      throw notFound;
+    } catch (e) {
+      if (e && e.status === 404) throw e;
+      throw datamuseError || e;
+    }
+  }
+
+  // Human-readable cause for a failed definition fetch — shown in the tooltip
+  // so users can tell an outage from a rate limit from their own network.
+  function describeFetchError(e) {
+    const status = e && e.status;
+    if (status === 429) return 'Dictionary rate limit hit (HTTP 429)';
+    if (status >= 500) return `Dictionary service is down (HTTP ${status})`;
+    if (status) return `Dictionary error (HTTP ${status})`;
+    if (e && /timeout|abort/i.test(`${e.name} ${e.message}`)) return 'Dictionary request timed out';
+    return 'Network error reaching the dictionary';
   }
 
   const defInflight = new Map(); // word → in-flight promise: dedups prefetch vs click
@@ -982,12 +1027,17 @@
     if (defInflight.has(key)) return defInflight.get(key);
     const p = (async () => {
       try {
-        const result = await fetchDictionary(word);
-        const dictResult = { status: 'fulfilled', value: result, source: mwApiKey ? 'mw' : 'free' };
+        const { source, value } = await fetchDictionary(word);
+        const dictResult = { status: 'fulfilled', value, source };
         apiCache.set(key, { dictResult });
         return dictResult;
       } catch (e) {
-        const dictResult = { status: 'rejected', notFound: !!(e && e.status === 404) };
+        const dictResult = {
+          status: 'rejected',
+          notFound: !!(e && e.status === 404),
+          source: mwApiKey ? 'mw' : 'free',
+          errorText: describeFetchError(e),
+        };
         if (dictResult.notFound) apiCache.set(key, { dictResult });
         return dictResult;
       } finally {
@@ -1055,6 +1105,17 @@
     return `https://media.merriam-webster.com/audio/prons/en/us/mp3/${subdir}/${audio}.mp3`;
   }
 
+  // Wiktionary REST serves definitions as HTML fragments (wiki links, bold,
+  // label spans); reduce to plain text before rendering.
+  function stripWikiHtml(html) {
+    return html
+      .replace(/<[^>]*>/g, '')
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function buildTooltipContent(word, dictResult) {
     let html = '';
 
@@ -1062,65 +1123,67 @@
     html += `<div class="we-tooltip-word">${escapeHTML(word)}</div>`;
 
     // Dictionary content
-    if (dictResult.status === 'fulfilled' && Array.isArray(dictResult.value)) {
+    if (dictResult.status === 'fulfilled' && dictResult.source === 'mw' && Array.isArray(dictResult.value)) {
       // MW returns array of strings when word not found (suggestions)
-      if (dictResult.source === 'mw' && typeof dictResult.value[0] === 'string') {
+      if (typeof dictResult.value[0] === 'string') {
         html += `<div class="we-tooltip-nodef">No definition found.</div>`;
         return html;
       }
 
-      if (dictResult.source === 'mw') {
-        // Merriam-Webster format
-        const entry = dictResult.value[0];
-        const pos = entry.fl || '';
-        const phonetic = entry.hwi?.prs?.[0]?.mw ? `/${entry.hwi.prs[0].mw}/` : '';
-        const metaParts = [pos, phonetic].filter(Boolean);
-        if (metaParts.length) {
-          html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
-        }
+      // Merriam-Webster format
+      const entry = dictResult.value[0];
+      const pos = entry.fl || '';
+      const phonetic = entry.hwi?.prs?.[0]?.mw ? `/${entry.hwi.prs[0].mw}/` : '';
+      const metaParts = [pos, phonetic].filter(Boolean);
+      if (metaParts.length) {
+        html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
+      }
 
-        // Audio
-        const audioFile = entry.hwi?.prs?.[0]?.sound?.audio;
-        const audioUrl = getMwAudioUrl(audioFile);
-        if (audioUrl) {
-          html += `<button class="we-tooltip-audio" data-audio="${escapeHTML(audioUrl)}">&#128264;</button>`;
-        }
+      // Audio
+      const audioFile = entry.hwi?.prs?.[0]?.sound?.audio;
+      const audioUrl = getMwAudioUrl(audioFile);
+      if (audioUrl) {
+        html += `<button class="we-tooltip-audio" data-audio="${escapeHTML(audioUrl)}">&#128264;</button>`;
+      }
 
-        // Definitions
-        const defs = entry.shortdef || [];
-        for (const def of defs.slice(0, 2)) {
-          html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def)}</div>`;
-        }
-      } else {
-        // Free dictionary API format (default)
-        const entry = dictResult.value[0];
-
-        // Part of speech + phonetic on one line
-        const phonetic = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
-        const firstPos = entry.meanings?.[0]?.partOfSpeech || '';
-        const metaParts = [firstPos, phonetic].filter(Boolean);
-        if (metaParts.length) {
-          html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
-        }
-
-        // Audio button (small, inline)
-        const audioUrl = entry.phonetics
-          ?.map(p => p.audio)
-          .filter(a => a && a.length > 0)[0];
-        if (audioUrl) {
-          html += `<button class="we-tooltip-audio" data-audio="${escapeHTML(audioUrl)}">&#128264;</button>`;
-        }
-
-        // 1-2 definitions from first meaning group
-        const defs = entry.meanings?.[0]?.definitions;
-        if (defs) {
-          for (const def of defs.slice(0, 2)) {
-            html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def.definition)}</div>`;
-          }
-        }
+      // Definitions
+      const defs = entry.shortdef || [];
+      for (const def of defs.slice(0, 2)) {
+        html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def)}</div>`;
+      }
+    } else if (dictResult.status === 'fulfilled' && dictResult.source === 'datamuse' && Array.isArray(dictResult.value)) {
+      const entry = dictResult.value[0] || {};
+      const ipa = ((entry.tags || []).find(t => t.startsWith('ipa_pron:')) || '').slice(9).trim();
+      const posNames = { n: 'noun', v: 'verb', adj: 'adjective', adv: 'adverb' };
+      const defs = (entry.defs || []).slice(0, 2).map(d => {
+        const tab = d.indexOf('\t');
+        return { pos: posNames[d.slice(0, tab)] || '', text: d.slice(tab + 1).trim() };
+      });
+      const metaParts = [defs[0] ? defs[0].pos : '', ipa ? `/${ipa}/` : ''].filter(Boolean);
+      if (metaParts.length) {
+        html += `<div class="we-tooltip-meta">${metaParts.map(escapeHTML).join(' \u00b7 ')}</div>`;
+      }
+      for (const def of defs) {
+        html += `<div class="we-tooltip-def">&bull; ${escapeHTML(def.text)}</div>`;
+      }
+    } else if (dictResult.status === 'fulfilled' && dictResult.source === 'wiktionary' && dictResult.value && Array.isArray(dictResult.value.en)) {
+      const entry = dictResult.value.en[0] || {};
+      const pos = (entry.partOfSpeech || '').toLowerCase();
+      if (pos) {
+        html += `<div class="we-tooltip-meta">${escapeHTML(pos)}</div>`;
+      }
+      const defs = (entry.definitions || [])
+        .map(d => stripWikiHtml(d.definition || ''))
+        .filter(Boolean)
+        .slice(0, 2);
+      for (const text of defs) {
+        html += `<div class="we-tooltip-def">&bull; ${escapeHTML(text)}</div>`;
       }
     } else if (dictResult.status === 'rejected' && !dictResult.notFound) {
-      html += `<div class="we-tooltip-nodef">Couldn’t load definition — click the word to retry.</div>`;
+      html += `<div class="we-tooltip-nodef">${escapeHTML(dictResult.errorText || 'Couldn’t load definition')} — click the word to retry.</div>`;
+      if (dictResult.source !== 'mw') {
+        html += `<div class="we-tooltip-tip">Tip: for reliable definitions, add a free Merriam-Webster key (Tampermonkey menu → Set Dictionary API Key).</div>`;
+      }
     } else {
       html += `<div class="we-tooltip-nodef">No definition found.</div>`;
     }
