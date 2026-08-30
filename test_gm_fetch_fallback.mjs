@@ -38,7 +38,9 @@ function gmRequest(url) {
             try { ok(JSON.parse(res.responseText)); }
             catch { fail(new Error('Invalid JSON')); }
           } else {
-            fail(new Error(`HTTP ${res.status}`));
+            const err = new Error(`HTTP ${res.status}`);
+            err.status = res.status; // real server answer — lets gmFetch skip a pointless retry
+            fail(err);
           }
         },
         onerror: () => fail(new Error('Network error')),
@@ -51,11 +53,18 @@ function gmRequest(url) {
 async function gmFetch(url) {
   try {
     return await gmRequest(url);
-  } catch {
+  } catch (e) {
+    // Any real HTTP status means the server answered; page fetch would just
+    // repeat the same answer and double the load.
+    if (e && e.status) throw e;
     // Every host we call serves Access-Control-Allow-Origin: *, so page
     // fetch works when the GM transport is broken or slow.
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(GM_FETCH_TIMEOUT_MS) });
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
     return res.json();
   }
 }
@@ -89,10 +98,46 @@ await test('GM network error falls back to fetch', async () => {
   assert.deepStrictEqual(await gmFetch('u'), CLUES);
 });
 
-await test('GM non-2xx status falls back to fetch', async () => {
+await test('GM non-2xx status rejects without touching fetch (server answered — no retry)', async () => {
   GM_xmlhttpRequest = (o) => o.onload({ status: 500, responseText: '' });
+  let fetched = false;
+  fetch = async () => { fetched = true; return fetchOk(); };
+  await assert.rejects(() => gmFetch('u'), /HTTP 500/);
+  assert.strictEqual(fetched, false);
+});
+
+await test('GM 404 rejects with err.status = 404, no fallback (word not found is definitive)', async () => {
+  GM_xmlhttpRequest = (o) => o.onload({ status: 404, responseText: '{}' });
+  let fetched = false;
+  fetch = async () => { fetched = true; return fetchOk(); };
+  await assert.rejects(() => gmFetch('u'), (e) => e.status === 404);
+  assert.strictEqual(fetched, false);
+});
+
+await test('GM 429 rejects, no fallback (regression: rate-limit must not double the load)', async () => {
+  GM_xmlhttpRequest = (o) => o.onload({ status: 429, responseText: '' });
+  let fetched = false;
+  fetch = async () => { fetched = true; return fetchOk(); };
+  await assert.rejects(() => gmFetch('u'), (e) => e.status === 429);
+  assert.strictEqual(fetched, false);
+});
+
+await test('GM 200 with invalid JSON still falls back (transport-ambiguous, no status)', async () => {
+  GM_xmlhttpRequest = (o) => o.onload({ status: 200, responseText: 'not json' });
   fetch = fetchOk;
   assert.deepStrictEqual(await gmFetch('u'), CLUES);
+});
+
+await test('regression: hung fetch fallback is aborted — gmFetch cannot spin forever', async () => {
+  GM_xmlhttpRequest = () => {}; // GM leg silently vanishes
+  fetch = (url, opts) => new Promise((_, rej) =>
+    opts.signal.addEventListener('abort', () => rej(opts.signal.reason)));
+  // Node unrefs AbortSignal.timeout's internal timer; hold the loop open for it.
+  const keepAlive = setTimeout(() => {}, 2000);
+  const start = Date.now();
+  await assert.rejects(() => gmFetch('u'));
+  clearTimeout(keepAlive);
+  assert.ok(Date.now() - start < 1000, 'should abort in ~2× timeout, not hang');
 });
 
 await test('GM throwing synchronously falls back to fetch', async () => {
@@ -107,10 +152,10 @@ await test('both transports down → gmFetch rejects (callers show fallback text
   await assert.rejects(() => gmFetch('u'));
 });
 
-await test('fetch fallback rejects on non-ok HTTP status', async () => {
+await test('fetch fallback rejects on non-ok HTTP status, carrying err.status', async () => {
   GM_xmlhttpRequest = () => {};
   fetch = async () => ({ ok: false, status: 404, json: async () => null });
-  await assert.rejects(() => gmFetch('u'), /HTTP/);
+  await assert.rejects(() => gmFetch('u'), (e) => /HTTP/.test(e.message) && e.status === 404);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
