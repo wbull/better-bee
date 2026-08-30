@@ -11,7 +11,7 @@ Enhancements for the [NYT Spelling Bee](https://www.nytimes.com/puzzles/spelling
 
 - **Auto-dismiss interstitials** -- Skips the Play/Resume splash screen automatically
 - **Visual emoji feedback** -- Large emoji reactions for correct answers, duplicates, and errors
-- **Word Explorer** -- Click any found word to see its definition and pronunciation (Datamuse/Wiktionary; optional Merriam-Webster with your own free API key)
+- **Word Explorer** -- Click any found word to see its definition and pronunciation (Datamuse/Wiktionary; optional Merriam-Webster with your own free API key), plus a Wikipedia image when one confidently matches the word
 - **Hint system** -- Press `?` to cycle through hints for unfound words (first 2 letters + word length)
 - **Bee Buddy link** -- The bee icon opens [Spelling Bee Buddy](https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html) in a new tab
 - **Dock hiding** -- Removes the NYT promotional dock on all NYT pages

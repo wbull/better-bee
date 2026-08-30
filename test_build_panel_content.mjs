@@ -29,6 +29,12 @@ function getMwAudioUrl(audio) {
   return `https://media.merriam-webster.com/audio/prons/en/us/mp3/${subdir}/${audio}.mp3`;
 }
 
+function pickWikiThumbnail(summary, word) {
+  if (!summary || summary.type !== 'standard') return '';
+  if ((summary.titles?.canonical || '').toLowerCase() !== word.toLowerCase()) return '';
+  return summary.thumbnail?.source || '';
+}
+
 function describeFetchError(e) {
   const status = e && e.status;
   if (status === 429) return 'Dictionary rate limit hit (HTTP 429)';
@@ -181,6 +187,38 @@ test('Free-API failure shows the Merriam-Webster key tip; MW failure does not', 
   assert.ok(free.includes('Merriam-Webster key'));
   const mw = buildTooltipContent('xyzzy', erroredDict('Network error reaching the dictionary', 'mw'));
   assert.ok(!mw.includes('we-tooltip-tip'));
+});
+
+// ─── pickWikiThumbnail tests ───────────────────────────────────────
+
+console.log('\npickWikiThumbnail:');
+
+const wikiSummary = (over = {}) => ({
+  type: 'standard',
+  titles: { canonical: 'Tooth' },
+  thumbnail: { source: 'https://upload.wikimedia.org/t/tooth.png' },
+  ...over,
+});
+
+test('standard article with matching title and thumbnail → URL (case-insensitive)', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary(), 'tooth'), 'https://upload.wikimedia.org/t/tooth.png');
+});
+
+test('disambiguation page → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary({ type: 'disambiguation' }), 'tooth'), '');
+});
+
+test('title mismatch (redirect to a different article) → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary({ titles: { canonical: 'Anita_Doth' } }), 'doth'), '');
+});
+
+test('article without a thumbnail → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(wikiSummary({ thumbnail: undefined }), 'tooth'), '');
+});
+
+test('null/missing summary → no image', () => {
+  assert.strictEqual(pickWikiThumbnail(null, 'tooth'), '');
+  assert.strictEqual(pickWikiThumbnail({}, 'tooth'), '');
 });
 
 // ─── describeFetchError tests ──────────────────────────────────────
