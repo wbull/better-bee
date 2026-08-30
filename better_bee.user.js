@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.45
+// @version      1.46
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -17,6 +17,7 @@
 // @connect      api.datamuse.com
 // @connect      dictionaryapi.com
 // @connect      en.wiktionary.org
+// @connect      en.wikipedia.org
 // @connect      media.merriam-webster.com
 // @connect      static01.nyt.com
 // ==/UserScript==
@@ -157,6 +158,15 @@
       font-size: 13px;
       color: #999;
       margin: 4px 0;
+    }
+
+    .we-tooltip-img {
+      float: right;
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 6px;
+      margin: 0 0 6px 8px;
     }
 
     .we-tooltip-tip {
@@ -592,6 +602,13 @@
   // Per-release opt-in: a version with no entry here updates silently.
   // Keep only the ~5 newest versions; prune older entries when shipping.
   const RELEASE_NOTES = {
+    '1.46': {
+      features: [
+        '🖼️ Vocabulary images: the definition tooltip now shows a small Wikipedia picture when it confidently matches the word — learn the word, see the thing',
+        '💛 Better Bee is still completely free to enjoy — for now. A small subscription may come in the future.',
+      ],
+      fixes: [],
+    },
     '1.45': {
       features: [
         '📚 New definition sources: Datamuse (with IPA pronunciation) backed by Wiktionary — replacing the outage-prone free API',
@@ -1017,6 +1034,27 @@
     return 'Network error reaching the dictionary';
   }
 
+  // Vocabulary images: accept a Wikipedia summary only when it is confidently
+  // about this exact word — a wrong picture is worse than none.
+  function pickWikiThumbnail(summary, word) {
+    if (!summary || summary.type !== 'standard') return '';
+    if ((summary.titles?.canonical || '').toLowerCase() !== word.toLowerCase()) return '';
+    return summary.thumbnail?.source || '';
+  }
+
+  // Lazy (per tooltip open, never prefetched): Wikimedia rate-limits bursty
+  // clients, and most words are never clicked.
+  const wikiImageCache = new Map(); // word → promise of thumbnail URL or ''
+  function getWikiImage(word) {
+    const key = word.toLowerCase();
+    if (!wikiImageCache.has(key)) {
+      wikiImageCache.set(key, gmFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(key)}`)
+      .then(summary => pickWikiThumbnail(summary, key))
+      .catch(() => ''));
+    }
+    return wikiImageCache.get(key);
+  }
+
   const defInflight = new Map(); // word → in-flight promise: dedups prefetch vs click
 
   // Resolves to a dictResult; never rejects. Caches success and definitive
@@ -1225,6 +1263,20 @@
         audio.play().catch(() => {});
       });
     }
+
+    // Vocabulary image arrives after the definition — never blocks it, and a
+    // dismissed or switched tooltip drops it via the same staleness guard.
+    getWikiImage(word).then(url => {
+      if (myRequest !== requestCounter || !url) return;
+      const img = document.createElement('img');
+      img.className = 'we-tooltip-img';
+      img.src = url;
+      img.alt = '';
+      img.onload = () => positionTooltip(anchor);
+      img.onerror = () => { img.remove(); positionTooltip(anchor); };
+      tooltipBody.querySelector('.we-tooltip-word')?.after(img);
+      positionTooltip(anchor);
+    });
   }
 
   // Word list processor
