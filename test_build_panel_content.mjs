@@ -29,6 +29,15 @@ function getMwAudioUrl(audio) {
   return `https://media.merriam-webster.com/audio/prons/en/us/mp3/${subdir}/${audio}.mp3`;
 }
 
+function describeFetchError(e) {
+  const status = e && e.status;
+  if (status === 429) return 'Dictionary rate limit hit (HTTP 429)';
+  if (status >= 500) return `Dictionary service is down (HTTP ${status})`;
+  if (status) return `Dictionary error (HTTP ${status})`;
+  if (e && /timeout|abort/i.test(`${e.name} ${e.message}`)) return 'Dictionary request timed out';
+  return 'Network error reaching the dictionary';
+}
+
 function buildTooltipContent(word, dictResult) {
   let html = '';
 
@@ -93,6 +102,11 @@ function buildTooltipContent(word, dictResult) {
         }
       }
     }
+  } else if (dictResult.status === 'rejected' && !dictResult.notFound) {
+    html += `<div class="we-tooltip-nodef">${escapeHTML(dictResult.errorText || 'Couldn’t load definition')} — click the word to retry.</div>`;
+    if (dictResult.source !== 'mw') {
+      html += `<div class="we-tooltip-tip">Tip: for reliable definitions, add a free Merriam-Webster key (Tampermonkey menu → Set Dictionary API Key).</div>`;
+    }
   } else {
     html += `<div class="we-tooltip-nodef">No definition found.</div>`;
   }
@@ -110,7 +124,13 @@ function mwNotFound(suggestions) {
   return { status: 'fulfilled', value: suggestions, source: 'mw' };
 }
 function rejectedDict() {
-  return { status: 'rejected', reason: new Error('Not found') };
+  return { status: 'rejected', notFound: false }; // transient failure — retryable
+}
+function erroredDict(errorText, source = 'free') {
+  return { status: 'rejected', notFound: false, source, errorText };
+}
+function notFoundDict() {
+  return { status: 'rejected', notFound: true }; // definitive 404 — word absent
 }
 
 // ─── Free API tests ────────────────────────────────────────────────
@@ -195,10 +215,64 @@ test('Only uses first meaning group', () => {
   assert.ok(!html.includes('Second group def'));
 });
 
-test('"No definition found" on API failure', () => {
+test('Transient API failure shows retry message, not "No definition found"', () => {
   const html = buildTooltipContent('xyzzy', rejectedDict());
   assert.ok(html.includes('we-tooltip-nodef'));
+  assert.ok(html.includes('click the word to retry'));
+  assert.ok(!html.includes('No definition found'));
+});
+
+test('Definitive not-found (404) shows "No definition found"', () => {
+  const html = buildTooltipContent('xyzzy', notFoundDict());
+  assert.ok(html.includes('we-tooltip-nodef'));
   assert.ok(html.includes('No definition found'));
+  assert.ok(!html.includes('retry'));
+  assert.ok(!html.includes('we-tooltip-tip'), '404 is not a reliability problem — no tip');
+});
+
+test('Transient failure renders the specific cause text', () => {
+  const html = buildTooltipContent('xyzzy', erroredDict('Dictionary service is down (HTTP 522)'));
+  assert.ok(html.includes('Dictionary service is down (HTTP 522) — click the word to retry'));
+});
+
+test('Free-API failure shows the Merriam-Webster key tip; MW failure does not', () => {
+  const free = buildTooltipContent('xyzzy', erroredDict('Network error reaching the dictionary', 'free'));
+  assert.ok(free.includes('we-tooltip-tip'));
+  assert.ok(free.includes('Merriam-Webster key'));
+  const mw = buildTooltipContent('xyzzy', erroredDict('Network error reaching the dictionary', 'mw'));
+  assert.ok(!mw.includes('we-tooltip-tip'));
+});
+
+// ─── describeFetchError tests ──────────────────────────────────────
+
+console.log('\ndescribeFetchError:');
+
+test('429 → rate limit wording', () => {
+  assert.strictEqual(describeFetchError(Object.assign(new Error('HTTP 429'), { status: 429 })),
+    'Dictionary rate limit hit (HTTP 429)');
+});
+
+test('5xx → service down wording with status', () => {
+  assert.strictEqual(describeFetchError(Object.assign(new Error('HTTP 522'), { status: 522 })),
+    'Dictionary service is down (HTTP 522)');
+});
+
+test('other status → generic HTTP wording', () => {
+  assert.strictEqual(describeFetchError(Object.assign(new Error('HTTP 403'), { status: 403 })),
+    'Dictionary error (HTTP 403)');
+});
+
+test('GM watchdog timeout → timed out wording', () => {
+  assert.strictEqual(describeFetchError(new Error('GM timeout')), 'Dictionary request timed out');
+});
+
+test('AbortSignal TimeoutError → timed out wording', () => {
+  const e = Object.assign(new Error('signal timed out'), { name: 'TimeoutError' });
+  assert.strictEqual(describeFetchError(e), 'Dictionary request timed out');
+});
+
+test('status-less network failure → network wording', () => {
+  assert.strictEqual(describeFetchError(new Error('Network error')), 'Network error reaching the dictionary');
 });
 
 test('XSS: HTML entities escaped in word names', () => {

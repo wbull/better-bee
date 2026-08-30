@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.43
+// @version      1.44
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -17,7 +17,6 @@
 // @connect      api.dictionaryapi.dev
 // @connect      dictionaryapi.com
 // @connect      media.merriam-webster.com
-// @connect      en.wikipedia.org
 // @connect      static01.nyt.com
 // ==/UserScript==
 
@@ -49,12 +48,16 @@
       mwApiKey = key.trim();
       GM_setValue('mw_api_key', mwApiKey);
       apiCache.clear();
+      defInflight.clear();
+      prefetchFailures = 0; // host changed — give prefetch a fresh start
     }
   });
   GM_registerMenuCommand('Clear Dictionary API Key', () => {
     mwApiKey = '';
     GM_setValue('mw_api_key', '');
     apiCache.clear();
+    defInflight.clear();
+    prefetchFailures = 0;
   });
   // Label reflects state at registration; refreshes on next page load (same
   // low-tech fidelity as the API-key commands above).
@@ -153,6 +156,12 @@
       font-size: 13px;
       color: #999;
       margin: 4px 0;
+    }
+
+    .we-tooltip-tip {
+      font-size: 11px;
+      color: #888;
+      margin: 4px 0 0;
     }
 
     .we-tooltip-loading {
@@ -582,6 +591,14 @@
   // Per-release opt-in: a version with no entry here updates silently.
   // Keep only the ~5 newest versions; prune older entries when shipping.
   const RELEASE_NOTES = {
+    '1.44': {
+      features: [],
+      fixes: [
+        '📖 Word definitions are much more reliable: failed lookups now retry when you click the word instead of staying broken all session',
+        '🔍 Failed lookups now say why (rate limit, outage, timeout) and suggest the free Merriam-Webster key option',
+        '🐝 The definition tooltip can no longer get stuck on "Loading…" or pop back open after you dismiss it',
+      ],
+    },
     '1.43': {
       features: [],
       fixes: [
@@ -836,6 +853,7 @@
   const tooltipBody = tooltip.querySelector('.we-tooltip-body');
 
   function hideTooltip() {
+    requestCounter++; // dismissal outranks any in-flight showTooltip resolution
     tooltip.classList.remove('we-visible');
     setTimeout(() => { tooltip.style.display = 'none'; }, 150);
   }
@@ -923,7 +941,9 @@
               try { ok(JSON.parse(res.responseText)); }
               catch { fail(new Error('Invalid JSON')); }
             } else {
-              fail(new Error(`HTTP ${res.status}`));
+              const err = new Error(`HTTP ${res.status}`);
+              err.status = res.status; // real server answer — lets gmFetch skip a pointless retry
+              fail(err);
             }
           },
           onerror: () => fail(new Error('Network error')),
@@ -936,11 +956,18 @@
   async function gmFetch(url) {
     try {
       return await gmRequest(url);
-    } catch {
+    } catch (e) {
+      // Any real HTTP status means the server answered; page fetch would just
+      // repeat the same answer and double the load.
+      if (e && e.status) throw e;
       // Every host we call serves Access-Control-Allow-Origin: *, so page
       // fetch works when the GM transport is broken or slow.
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch(url, { signal: AbortSignal.timeout(GM_FETCH_TIMEOUT_MS) });
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
       return res.json();
     }
   }
@@ -952,27 +979,74 @@
     return gmFetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
   }
 
-  function fetchWikipedia(word) {
-    return gmFetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(word)}`);
+  // Human-readable cause for a failed definition fetch — shown in the tooltip
+  // so users can tell an outage from a rate limit from their own network.
+  function describeFetchError(e) {
+    const status = e && e.status;
+    if (status === 429) return 'Dictionary rate limit hit (HTTP 429)';
+    if (status >= 500) return `Dictionary service is down (HTTP ${status})`;
+    if (status) return `Dictionary error (HTTP ${status})`;
+    if (e && /timeout|abort/i.test(`${e.name} ${e.message}`)) return 'Dictionary request timed out';
+    return 'Network error reaching the dictionary';
   }
 
-  // Pre-fetch definitions for instant tooltip display
-  let prefetchDelay = 0;
-  function prefetchDefinition(word) {
+  const defInflight = new Map(); // word → in-flight promise: dedups prefetch vs click
+
+  // Resolves to a dictResult; never rejects. Caches success and definitive
+  // not-found (HTTP 404); transient failures are NOT cached so a later click retries.
+  function getDefinition(word) {
     const key = word.toLowerCase();
-    if (apiCache.has(key)) return;
-    prefetchDelay += 50;
-    const delay = prefetchDelay;
-    setTimeout(async () => {
-      if (apiCache.has(key)) return;
+    if (apiCache.has(key)) return Promise.resolve(apiCache.get(key).dictResult);
+    if (defInflight.has(key)) return defInflight.get(key);
+    const p = (async () => {
       try {
         const result = await fetchDictionary(word);
-        const source = mwApiKey ? 'mw' : 'free';
-        apiCache.set(key, { dictResult: { status: 'fulfilled', value: result, source } });
-      } catch {
-        apiCache.set(key, { dictResult: { status: 'rejected' } });
+        const dictResult = { status: 'fulfilled', value: result, source: mwApiKey ? 'mw' : 'free' };
+        apiCache.set(key, { dictResult });
+        return dictResult;
+      } catch (e) {
+        const dictResult = {
+          status: 'rejected',
+          notFound: !!(e && e.status === 404),
+          source: mwApiKey ? 'mw' : 'free',
+          errorText: describeFetchError(e),
+        };
+        if (dictResult.notFound) apiCache.set(key, { dictResult });
+        return dictResult;
+      } finally {
+        defInflight.delete(key);
       }
-    }, delay);
+    })();
+    defInflight.set(key, p);
+    return p;
+  }
+
+  // Pre-fetch definitions for instant tooltip display — bounded so we never
+  // burst-hammer the dictionary API, with a breaker that stops background
+  // prefetching during an outage/rate-limit (clicks still fetch on demand).
+  const prefetchQueue = [];
+  let prefetchActive = 0;
+  let prefetchFailures = 0; // consecutive transient failures; success resets
+  const PREFETCH_CONCURRENCY = 2;
+  const PREFETCH_MAX_FAILURES = 3;
+
+  function prefetchDefinition(word) {
+    const key = word.toLowerCase();
+    if (apiCache.has(key) || defInflight.has(key) || prefetchQueue.includes(key)) return;
+    prefetchQueue.push(key);
+    pumpPrefetch();
+  }
+
+  async function pumpPrefetch() {
+    if (prefetchActive >= PREFETCH_CONCURRENCY || prefetchFailures >= PREFETCH_MAX_FAILURES) return;
+    const key = prefetchQueue.shift();
+    if (!key) return;
+    prefetchActive++;
+    const dictResult = await getDefinition(key);
+    if (dictResult.status === 'rejected' && !dictResult.notFound) prefetchFailures++;
+    else prefetchFailures = 0;
+    prefetchActive--;
+    pumpPrefetch();
   }
 
   async function fetchClues() {
@@ -1068,6 +1142,11 @@
           }
         }
       }
+    } else if (dictResult.status === 'rejected' && !dictResult.notFound) {
+      html += `<div class="we-tooltip-nodef">${escapeHTML(dictResult.errorText || 'Couldn’t load definition')} — click the word to retry.</div>`;
+      if (dictResult.source !== 'mw') {
+        html += `<div class="we-tooltip-tip">Tip: for reliable definitions, add a free Merriam-Webster key (Tampermonkey menu → Set Dictionary API Key).</div>`;
+      }
     } else {
       html += `<div class="we-tooltip-nodef">No definition found.</div>`;
     }
@@ -1083,26 +1162,15 @@
     const myRequest = ++requestCounter;
 
     const cacheKey = word.toLowerCase();
-    let dictResult;
 
-    if (apiCache.has(cacheKey)) {
-      ({ dictResult } = apiCache.get(cacheKey));
-    } else {
+    if (!apiCache.has(cacheKey)) {
       // Show loading state while fetching
       tooltipBody.innerHTML = '<div class="we-tooltip-loading">Loading\u2026</div>';
       tooltip.style.display = 'block';
       positionTooltip(anchor);
       requestAnimationFrame(() => tooltip.classList.add('we-visible'));
-
-      try {
-        const result = await fetchDictionary(word);
-        const source = mwApiKey ? 'mw' : 'free';
-        dictResult = { status: 'fulfilled', value: result, source };
-      } catch {
-        dictResult = { status: 'rejected' };
-      }
-      apiCache.set(cacheKey, { dictResult });
     }
+    const dictResult = await getDefinition(word);
 
     // Discard stale responses
     if (myRequest !== requestCounter) return;
