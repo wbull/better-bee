@@ -93,6 +93,8 @@ function buildTooltipContent(word, dictResult) {
         }
       }
     }
+  } else if (dictResult.status === 'rejected' && !dictResult.notFound) {
+    html += `<div class="we-tooltip-nodef">Couldn’t load definition — click the word to retry.</div>`;
   } else {
     html += `<div class="we-tooltip-nodef">No definition found.</div>`;
   }
@@ -110,7 +112,10 @@ function mwNotFound(suggestions) {
   return { status: 'fulfilled', value: suggestions, source: 'mw' };
 }
 function rejectedDict() {
-  return { status: 'rejected', reason: new Error('Not found') };
+  return { status: 'rejected', notFound: false }; // transient failure — retryable
+}
+function notFoundDict() {
+  return { status: 'rejected', notFound: true }; // definitive 404 — word absent
 }
 
 // ─── Free API tests ────────────────────────────────────────────────
@@ -195,10 +200,18 @@ test('Only uses first meaning group', () => {
   assert.ok(!html.includes('Second group def'));
 });
 
-test('"No definition found" on API failure', () => {
+test('Transient API failure shows retry message, not "No definition found"', () => {
   const html = buildTooltipContent('xyzzy', rejectedDict());
   assert.ok(html.includes('we-tooltip-nodef'));
+  assert.ok(html.includes('click the word to retry'));
+  assert.ok(!html.includes('No definition found'));
+});
+
+test('Definitive not-found (404) shows "No definition found"', () => {
+  const html = buildTooltipContent('xyzzy', notFoundDict());
+  assert.ok(html.includes('we-tooltip-nodef'));
   assert.ok(html.includes('No definition found'));
+  assert.ok(!html.includes('retry'));
 });
 
 test('XSS: HTML entities escaped in word names', () => {
