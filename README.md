@@ -35,6 +35,14 @@ Updates are delivered automatically via Tampermonkey/Violentmonkey.
 | Click the bee | Opens Spelling Bee Buddy in a new tab |
 | Press `Escape` | Closes any open overlay |
 
+## Running the tests
+
+```bash
+npm test          # node --test suite under tests/ — runs the REAL better_bee.user.js in jsdom, with coverage
+```
+
+Tests load the actual userscript through `tests/harness.mjs` (`loadScript()`), which evaluates the GM shims and the script in a fresh jsdom window and hands back the internals the script exposes to `unsafeWindow.__bbInternals` (a no-op hook on the real page). There is no copy of the source inside the tests, so a passing suite means the shipped code passes.
+
 ## Testing the splash
 
 `npm run live:splash` runs a headless five-scenario check of the update-news splash against the live puzzle page (add `--show` to open a visible browser pre-seeded as an old install for manual poking).

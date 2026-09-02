@@ -16,6 +16,15 @@ export function makeFakeTimers() {
     const i = timers.findIndex(t => t.id === id);
     if (i >= 0) timers.splice(i, 1);
   };
+  const setInterval = (fn, ms = 0, ...args) => {
+    const period = Math.max(1, Number(ms) || 0);
+    const id = ++seq;
+    const tick = () => { fn(...args); if (timers.some(t => t.id === id) || cleared.has(id)) return; timers.push({ id, at: now + period, fn: tick, args: [] }); };
+    timers.push({ id, at: now + period, fn: tick, args: [] });
+    return id;
+  };
+  const cleared = new Set();
+  const clearInterval = id => { cleared.add(id); clearTimeout(id); };
   // Run every timer due at or before now+ms, in due order. Callbacks may schedule
   // more timers; those run too if they fall inside the window (nested chains).
   const advance = ms => {
@@ -34,12 +43,16 @@ export function makeFakeTimers() {
   return {
     setTimeout,
     clearTimeout,
+    setInterval,
+    clearInterval,
     advance,
     now: () => now,
     pending: () => timers.length,
     install(win) {
       win.setTimeout = setTimeout;
       win.clearTimeout = clearTimeout;
+      win.setInterval = setInterval;
+      win.clearInterval = clearInterval;
       win.requestAnimationFrame = fn => setTimeout(() => fn(now), 16);
       win.cancelAnimationFrame = clearTimeout;
       return this;
