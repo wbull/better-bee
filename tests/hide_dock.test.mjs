@@ -2,19 +2,15 @@
 // the dock is removed on arrival, the observer disconnects after the first
 // removal, and nothing from the Bee-only modules is created.
 //
-// KNOWN BUG (pinned as `todo` below): hideDock() is called on line ~448 before
-// `const dockObserver` (line ~449) is initialized, so a dock that is already in
-// the DOM when the script runs throws a TDZ ReferenceError from
-// `dockObserver.disconnect()` and aborts the entire IIFE — on the Bee page that
-// means no bee, no hints, nothing. The `todo` tests assert the intended
-// behaviour and will start passing once `dockObserver` is declared first.
+// A dock already present when the script runs must be removed synchronously and
+// must not disturb the rest of the IIFE (v1.50 fixed a TDZ ReferenceError here:
+// hideDock() used to run before `const dockObserver` was initialised).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadScript, BEE_URL } from './harness.mjs';
 
 const CROSSWORDS = 'https://www.nytimes.com/crosswords';
 const DOCK_SEL = '#dock-container[data-testid="onsite-messaging-unit-dock"]';
-const TDZ_TODO = 'bug: hideDock() runs before `const dockObserver` is initialized (TDZ ReferenceError aborts the script)';
 
 function dockHtml(testid = 'onsite-messaging-unit-dock') {
   return `<div id="dock-container" data-testid="${testid}"><p>Subscribe now</p></div>`;
@@ -80,13 +76,13 @@ test('on a non-Bee URL nothing from the later modules exists', () => {
   assert.ok(p.document.head.querySelector('style'), 'module 1 still installs the shared CSS');
 });
 
-test('a dock present at load is removed synchronously', { todo: TDZ_TODO }, () => {
+test('a dock present at load is removed synchronously', () => {
   const p = page({ html: `<body>${dockHtml()}<main id="content">puzzle</main></body>` });
   assert.equal(p.document.querySelector(DOCK_SEL), null);
   assert.ok(p.document.getElementById('content'), 'sibling content untouched');
 });
 
-test('a dock present at load on the Bee page must not abort the rest of the script', { todo: TDZ_TODO }, () => {
+test('a dock present at load on the Bee page must not abort the rest of the script', () => {
   const p = page({ url: BEE_URL, html: `<body>${dockHtml()}</body>` });
   assert.equal(p.document.querySelector(DOCK_SEL), null);
   assert.ok(p.document.getElementById('bee-buddy'), 'Module 2 ran');
