@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.49
+// @version      1.50
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -445,8 +445,11 @@
     }
   }
 
-  hideDock();
+  // Observer first: hideDock() disconnects it, so it must exist before the
+  // synchronous first call (a dock already present at load used to throw a TDZ
+  // ReferenceError here and abort the whole script — fixed in v1.50).
   const dockObserver = new MutationObserver(hideDock);
+  hideDock();
   dockObserver.observe(document.body, { childList: true, subtree: true });
 
   // ─── Guard: Only run modules 2+ on Spelling Bee page ───────────────
@@ -597,6 +600,12 @@
   // Per-release opt-in: a version with no entry here updates silently.
   // Keep only the ~5 newest versions; prune older entries when shipping.
   const RELEASE_NOTES = {
+    '1.50': {
+      features: [],
+      fixes: [
+        '🐝 Better Bee could silently fail to load when the NYT promo dock was already on the page — everything now starts reliably',
+      ],
+    },
     '1.46': {
       features: [
         '🖼️ Vocabulary images: the definition tooltip now shows a small Wikipedia picture when it confidently matches the word — learn the word, see the thing',
