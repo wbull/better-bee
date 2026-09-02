@@ -13,4 +13,4 @@ Orchestrate these subagents in strict order, passing each one's JSON output to t
 4. Once the verifier reports `pass: true`, dispatch **bee-shipper** with all prior outputs.
 5. Report the returned `pr_url` to the user. Do not merge.
 
-Guardrails (drift-guard, version-guard) run automatically as a commit hook — if the shipper is blocked, surface the hook message.
+The version-guard runs automatically as a commit hook — if the shipper is blocked, surface the hook message.

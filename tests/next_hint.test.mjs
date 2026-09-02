@@ -51,6 +51,16 @@ test('skips queued words the player has found since the queue was built', () => 
   assert.equal(state(ctx).hintIndex, 2);
 });
 
+test('skips multiple consecutive found words', () => {
+  const ctx = activeHints({
+    queue: [entry('hello'), entry('other'), entry('relate')],
+    found: ['hello', 'other'],
+  });
+  ctx.internals.nextHint();
+  assert.equal(toastText(ctx), 'RE');
+  assert.equal(state(ctx).hintIndex, 3);
+});
+
 test('rebuilds the queue from the puzzle answers when it is exhausted', () => {
   const ctx = activeHints({ queue: [entry('hello')], index: 1 });
   ctx.internals.nextHint();

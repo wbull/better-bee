@@ -73,6 +73,9 @@ const runFile = (ctx, file) =>
  * @param {string} [opts.html]       body markup present before the script runs
  * @param {object} [opts.gameData]   value of window.gameData (default FIXTURE_GAME)
  * @param {object} [opts.gmValues]   GM_getValue seed: { key: value }
+ * @param {object} [opts.localStorage]  raw localStorage seed: { key: string } (e.g. the
+ *                                   onboarding flag `betterBee_onboardingSeen`, which
+ *                                   the script reads directly, not through GM_getValue)
  * @param {Function} [opts.fetchImpl]  replacement for window.fetch
  * @param {Function} [opts.gmXhrImpl]  replacement for GM_xmlhttpRequest (after shims)
  * @param {object} [opts.timers]     a makeFakeTimers() instance to install on the window
@@ -83,6 +86,7 @@ export function loadScript({
   html = '<body></body>',
   gameData = FIXTURE_GAME,
   gmValues = {},
+  localStorage = {},
   fetchImpl,
   gmXhrImpl,
   timers,
@@ -98,6 +102,9 @@ export function loadScript({
   w.gameData = gameData;
   for (const [k, v] of Object.entries(gmValues)) {
     w.localStorage.setItem('GM_' + k, JSON.stringify(v));
+  }
+  for (const [k, v] of Object.entries(localStorage)) {
+    w.localStorage.setItem(k, String(v));
   }
   w.__bbScriptVersion = version ?? versionFromHeader();
   if (fetchImpl) w.fetch = fetchImpl;
