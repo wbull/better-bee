@@ -7,7 +7,10 @@ window.GM_info = { script: { version: window.__bbScriptVersion || '0.0.0' } };
 window.GM_addStyle = (css) => { const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); return s; };
 window.GM_getValue = (k, d) => { const v = localStorage.getItem('GM_' + k); return v === null ? d : JSON.parse(v); };
 window.GM_setValue = (k, v) => localStorage.setItem('GM_' + k, JSON.stringify(v));
-window.GM_registerMenuCommand = (label) => { (window.__gmMenu = window.__gmMenu || []).push(label); };
+window.GM_registerMenuCommand = (label, fn) => {
+  (window.__gmMenu = window.__gmMenu || []).push(label);
+  (window.__gmMenuCommands = window.__gmMenuCommands || {})[label] = fn; // harness: invoke a menu entry
+};
 window.GM_xmlhttpRequest = (o) => {
   fetch(o.url, { method: o.method || 'GET', headers: o.headers })
     .then(async (r) => o.onload && o.onload({ status: r.status, responseText: await r.text() }))

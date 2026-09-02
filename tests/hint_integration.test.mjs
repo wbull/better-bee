@@ -111,6 +111,20 @@ test('clicking the bee opens Bee Buddy only while hints are inactive', () => {
   assert.equal(opened.length, 1);
 });
 
+test('Enter and Space on the focused bee open Bee Buddy, other keys do not', () => {
+  const p = page();
+  const opened = [];
+  p.window.open = url => opened.push(url);
+  const press = k => p.bee.dispatchEvent(new p.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  assert.equal(press('Enter'), false);
+  assert.equal(press(' '), false);
+  assert.equal(press('a'), true);
+  assert.deepEqual(opened, [
+    'https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html',
+    'https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html',
+  ]);
+});
+
 test('with every word found, "?" congratulates and never activates', () => {
   const p = page({ found: FIXTURE_GAME.today.answers });
   p.key('?');
