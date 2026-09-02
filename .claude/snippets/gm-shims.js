@@ -3,7 +3,7 @@
 // When a new @grant is added to the header, add a matching shim here.
 window.unsafeWindow = window;
 // GM_info needs no @grant; harness may pre-set __bbScriptVersion (e.g. parsed from the @version header).
-window.GM_info = { script: { version: window.__bbScriptVersion || '1.42' } };
+window.GM_info = { script: { version: window.__bbScriptVersion || '0.0.0' } };
 window.GM_addStyle = (css) => { const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); return s; };
 window.GM_getValue = (k, d) => { const v = localStorage.getItem('GM_' + k); return v === null ? d : JSON.parse(v); };
 window.GM_setValue = (k, v) => localStorage.setItem('GM_' + k, JSON.stringify(v));
