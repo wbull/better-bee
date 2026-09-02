@@ -6,7 +6,7 @@ test('on the Spelling Bee page the script hands its internals to __bbInternals',
   const { internals } = loadScript();
   assert.ok(internals, 'internals object was not delivered');
   assert.equal(typeof internals.classifyMessage, 'function');
-  assert.equal(typeof internals.nextHint, 'function');
+  assert.equal(typeof internals.hints.start, 'function');
 });
 
 test('on the Spelling Bee page the script injects its UI and menu commands', () => {

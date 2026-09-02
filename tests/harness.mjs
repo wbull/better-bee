@@ -80,6 +80,9 @@ const runFile = (ctx, file) =>
  * @param {Function} [opts.gmXhrImpl]  replacement for GM_xmlhttpRequest (after shims)
  * @param {object} [opts.timers]     a makeFakeTimers() instance to install on the window
  * @param {string} [opts.version]    GM_info.script.version (default: parsed from the header)
+ * @param {Function} [opts.onWindow]   called with the window after the shims and before the
+ *                                     script runs — for globals the script captures at load
+ *                                     (e.g. `w.Math.random = () => 0.999`)
  */
 export function loadScript({
   url = BEE_URL,
@@ -91,6 +94,7 @@ export function loadScript({
   gmXhrImpl,
   timers,
   version,
+  onWindow,
 } = {}) {
   // No pretendToBeVisual: it starts a perpetual rAF loop that never lets the
   // process exit. The script's only rAF use is a class toggle, so a timer stub is enough.
@@ -113,6 +117,7 @@ export function loadScript({
   const ctx = dom.getInternalVMContext();
   runFile(ctx, SHIMS);
   if (gmXhrImpl) w.GM_xmlhttpRequest = gmXhrImpl;
+  if (onWindow) onWindow(w);
 
   let internals;
   w.__bbInternals = i => { internals = i; };
