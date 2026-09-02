@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.47
+// @version      1.48
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -452,14 +452,9 @@
   // ─── Guard: Only run modules 2+ on Spelling Bee page ───────────────
   if (!location.pathname.includes('/puzzles/spelling-bee')) return;
 
-  // ─── Hint State (hoisted for bee click handler access) ────────────
-  let hintActive = false;
-  let hintQueue = [];
-  let hintIndex = 0;
-  let hintDismissing = false;
-  let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
-  let cluePromise = null;    // In-flight clue fetch, shared so prefetch + "." don't double-request
-  let lastPuzzleId = null;   // Tracks current puzzle to detect navigation to back-catalog
+  // ─── Shared UI state ──────────────────────────────────────────────
+  // Hint state lives inside `hints` (Module 5). Earlier closures reference it
+  // lazily from event/observer callbacks, which only fire after the IIFE has run.
   let onboardingActive = false;
 
   // ─── Module 2: Bee Buddy Button ───────────────────────────────────
@@ -482,7 +477,7 @@
     `;
 
     function goToBeeBuddy() {
-      if (!hintActive) {
+      if (!hints.state.active) {
         window.open('https://www.nytimes.com/interactive/2023/upshot/spelling-bee-buddy.html', '_blank');
       }
     }
@@ -924,9 +919,9 @@
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     // Dismiss hints first
-    if (hintActive) {
+    if (hints.state.active) {
       e.preventDefault();
-      stopHints();
+      hints.stop();
       return;
     }
     // Close tooltip
@@ -1114,24 +1109,8 @@
     pumpPrefetch();
   }
 
-  async function fetchClues() {
-    if (clueCache) return clueCache;
-    if (!cluePromise) {
-      cluePromise = (async () => {
-        try {
-          const puzzleId = unsafeWindow.gameData.today.id;
-          const url = `https://static01.nyt.com/newsgraphics/2023-01-18-spelling-bee-buddy/clues/${puzzleId}.json`;
-          const data = await gmFetch(url).catch(() => null);
-          if (data && Array.isArray(data)) {
-            clueCache = new Map(data.map(c => [c.word, c]));
-          }
-        } catch { /* silent fail — Level 2 will show fallback */ }
-        cluePromise = null;
-        return clueCache;
-      })();
-    }
-    return cluePromise;
-  }
+  const CLUE_URL = puzzleId =>
+    `https://static01.nyt.com/newsgraphics/2023-01-18-spelling-bee-buddy/clues/${puzzleId}.json`;
 
   function getMwAudioUrl(audio) {
     if (!audio) return '';
@@ -1355,10 +1334,11 @@
       const text = el.textContent?.trim();
       if (text) lastInputText = text;
       // Update hint tiles with current input
-      if (hintActive && hintIndex > 0 && !hintDismissing) {
+      const entry = hints.currentEntry();
+      if (entry && !hints.state.dismissing) {
         const tiles = hintTiles.querySelectorAll('.we-hint-tile');
         const input = (text || '').toUpperCase();
-        const word = (hintQueue[hintIndex - 1]?.word || '').toUpperCase();
+        const word = (entry.word || '').toUpperCase();
         for (let i = 0; i < tiles.length; i++) {
           if (i < input.length) {
             tiles[i].textContent = input[i];
@@ -1397,8 +1377,7 @@
           const directRead = input?.textContent?.trim() || '';
           const capturedWord = directRead.length >= MIN_WORD_LENGTH ? directRead : lastInputText;
           // Preemptively guard tiles if this looks like a successful hint match
-          const pendingGotIt = hintActive && !hintDismissing && currentHintMatches(capturedWord);
-          if (pendingGotIt) hintDismissing = true;
+          const pendingGotIt = hints.armGotIt(capturedWord);
           setTimeout(() => {
             const text = target.textContent?.trim();
             const type = classifyMessage(text);
@@ -1410,13 +1389,13 @@
                 setTimeout(() => {
                   hideHintToast();
                   setTimeout(() => {
-                    hintDismissing = false;
-                    nextHint();
+                    hints.releaseGotIt();
+                    hints.next();
                   }, 400);
                 }, 600);
               }, 400);
             } else if (pendingGotIt) {
-              hintDismissing = false;  // Wasn't success — release guard
+              hints.releaseGotIt();  // Wasn't success — release guard
             }
           }, 100);
         }
@@ -1467,29 +1446,9 @@
     return found;
   }
 
-  function currentHintMatches(word) {
-    if (!word || hintIndex === 0 || hintIndex > hintQueue.length) return false;
-    const entry = hintQueue[hintIndex - 1];
-    // Exact word match (more reliable)
-    if (entry.word && word.toLowerCase() === entry.word) return true;
-    // Fallback: prefix + length match
-    const prefix = entry.hint.slice(0, 2);
-    const len = parseInt(entry.hint.split(' ').pop(), 10);
-    const upper = word.toUpperCase();
-    return upper.length === len && upper.startsWith(prefix);
-  }
-
-  function buildHintQueue() {
-    const currentId = unsafeWindow.gameData?.today?.id;
-    if (currentId && currentId !== lastPuzzleId) {
-      lastPuzzleId = currentId;
-      clueCache = null;   // Invalidate clues for old puzzle
-      cluePromise = null; // Drop any in-flight fetch for the old puzzle too
-    }
-
-    const answers = getAnswers();
+  // Pure: answers + found → shuffled hint entries. null when answers are unavailable.
+  function buildHintQueue(answers, found, random) {
     if (!answers) return null;
-    const found = getFoundWords();
     const remaining = answers.filter(w => !found.has(w.toLowerCase()));
     if (remaining.length === 0) return [];
 
@@ -1501,7 +1460,7 @@
 
     // Shuffle (Fisher-Yates)
     for (let i = hints.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [hints[i], hints[j]] = [hints[j], hints[i]];
     }
     return hints;
@@ -1540,131 +1499,235 @@
     hintToastCheck.classList.remove('we-visible');
   }
 
-  async function expandHint() {
-    if (!hintActive || hintIndex === 0 || hintIndex > hintQueue.length) return;
-    const entry = hintQueue[hintIndex - 1];
-    // Expand with a loading state BEFORE awaiting: the clue fetch can stall
-    // (see gmRequest), and "." must always visibly respond.
-    hintToastClue.textContent = '\u2026';
-    hintToast.classList.add('we-expanded');
-    const clues = await fetchClues();
-    if (!hintActive || hintQueue[hintIndex - 1] !== entry) return;
-    const clue = clues?.get(entry.word);
-    if (clue?.text) {
-      hintToastClue.textContent = '';
-      const q = document.createElement('span');
-      q.textContent = `\u201C${clue.text}\u201D`;
-      hintToastClue.appendChild(q);
-      if (clue.user) {
-        const cr = document.createElement('span');
-        cr.className = 'we-hint-toast-credit';
-        cr.textContent = `Clue by ${clue.user}`;
-        hintToastClue.appendChild(cr);
-      }
-    } else {
-      hintToastClue.textContent = '(no clue available)';
-    }
-    // No re-add of we-expanded here: if the user collapsed while loading,
-    // the resolved clue must not pop the panel back open.
-  }
-
-  function collapseHint() {
-    hintToast.classList.remove('we-expanded');
-  }
-
-  function nextHint() {
-    if (!hintActive || hintDismissing) return;
-
-    // Try up to 2 passes: skip found words, rebuild if needed
-    for (let pass = 0; pass < 2; pass++) {
-      if (hintIndex >= hintQueue.length) {
-        hintQueue = buildHintQueue();
-        hintIndex = 0;
-
-        if (hintQueue === null) {
-          showHintToast('Hints unavailable');
-          setTimeout(() => { stopHints(); }, 3000);
-          return;
+  // Every DOM effect the hint controller needs, as small named operations.
+  const hintUi = {
+    showToast: showHintToast,
+    hideToast: hideHintToast,
+    showClueLoading() {
+      hintToastClue.textContent = '\u2026';
+      hintToast.classList.add('we-expanded');
+    },
+    showClue(clue) {
+      if (clue?.text) {
+        hintToastClue.textContent = '';
+        const q = document.createElement('span');
+        q.textContent = `\u201C${clue.text}\u201D`;
+        hintToastClue.appendChild(q);
+        if (clue.user) {
+          const cr = document.createElement('span');
+          cr.className = 'we-hint-toast-credit';
+          cr.textContent = `Clue by ${clue.user}`;
+          hintToastClue.appendChild(cr);
         }
-        if (hintQueue.length === 0) {
-          showHintToast('You found them all!');
-          setTimeout(() => { stopHints(); }, 3000);
-          return;
-        }
+      } else {
+        hintToastClue.textContent = '(no clue available)';
       }
-
-      // Skip any entries the user has since found
-      const found = getFoundWords();
-      while (hintIndex < hintQueue.length && found.has(hintQueue[hintIndex].word)) {
-        hintIndex++;
-      }
-
-      if (hintIndex < hintQueue.length) {
-        hintIndex++;
-        showHintToast(hintQueue[hintIndex - 1]);
-        return;
-      }
-      // All remaining were found — loop back to rebuild
-    }
-
-    // Both passes failed — everything found
-    showHintToast('You found them all!');
-    setTimeout(() => { stopHints(); }, 3000);
-  }
-
-  function startHints() {
-    hintQueue = buildHintQueue();
-    hintIndex = 0;
-
-    if (hintQueue === null) {
-      showHintToast('Hints unavailable');
-      setTimeout(() => { hideHintToast(); }, 3000);
-      return;
-    }
-    if (hintQueue.length === 0) {
-      showHintToast('You found them all!');
-      setTimeout(() => { hideHintToast(); }, 3000);
-      return;
-    }
-
-    hintActive = true;
-    const bee = document.getElementById('bee-buddy');
-    if (bee) {
+      // No re-add of we-expanded here: if the user collapsed while loading,
+      // the resolved clue must not pop the panel back open.
+    },
+    collapseClue() { hintToast.classList.remove('we-expanded'); },
+    isClueExpanded() { return hintToast.classList.contains('we-expanded'); },
+    showCheck() { hintToastCheck.classList.add('we-visible'); },
+    markGotIt() { hintToast.classList.add('we-got-it'); },
+    beeExit() {
+      const bee = document.getElementById('bee-buddy');
+      if (!bee) return;
       bee.classList.remove('we-hinting', 'we-arrived', 'we-returning');
       bee.classList.add('we-exiting');
-      setTimeout(() => { if (hintActive) bee.classList.add('we-exited'); }, 600);
+    },
+    beeExited() { document.getElementById('bee-buddy')?.classList.add('we-exited'); },
+    beeReset() { document.getElementById('bee-buddy')?.classList.remove('we-hinting', 'we-exiting', 'we-exited'); },
+    beeReturn() {
+      const bee = document.getElementById('bee-buddy');
+      if (!bee) return;
+      bee.classList.add('we-returning');
+      bee.addEventListener('animationend', function onReturn() {
+        bee.removeEventListener('animationend', onReturn);
+        bee.classList.remove('we-returning');
+        bee.classList.add('we-arrived');
+      });
+    },
+  };
+
+  // Hint controller: all hint state and sequencing behind a small interface.
+  // deps: { getAnswers, getFoundWords, getPuzzleId, fetchClueData, ui, setTimeout, random }
+  function createHintController(deps) {
+    const { getAnswers, getFoundWords, getPuzzleId, fetchClueData, ui, random } = deps;
+    const later = deps.setTimeout;
+    let active = false;
+    let queue = [];
+    let index = 0;
+    let dismissing = false;
+    let clueCache = null;      // Map<word, {text, user, url}> — fetched once per puzzle
+    let cluePromise = null;    // In-flight clue fetch, shared so prefetch + "." don't double-request
+    let lastPuzzleId = null;   // Tracks current puzzle to detect navigation to back-catalog
+
+    function rebuildQueue() {
+      const currentId = getPuzzleId();
+      if (currentId && currentId !== lastPuzzleId) {
+        lastPuzzleId = currentId;
+        clueCache = null;   // Invalidate clues for old puzzle
+        cluePromise = null; // Drop any in-flight fetch for the old puzzle too
+      }
+      return buildHintQueue(getAnswers(), getFoundWords(), random);
     }
-    fetchClues(); // pre-fetch in background
-    setTimeout(() => { if (hintActive) nextHint(); }, 450);
+
+    async function fetchClues() {
+      if (clueCache) return clueCache;
+      if (!cluePromise) {
+        cluePromise = (async () => {
+          try {
+            const data = await fetchClueData(getPuzzleId());
+            if (data && Array.isArray(data)) {
+              clueCache = new Map(data.map(c => [c.word, c]));
+            }
+          } catch { /* silent fail — Level 2 will show fallback */ }
+          cluePromise = null;
+          return clueCache;
+        })();
+      }
+      return cluePromise;
+    }
+
+    function matches(word) {
+      if (!word || index === 0 || index > queue.length) return false;
+      const entry = queue[index - 1];
+      // Exact word match (more reliable)
+      if (entry.word && word.toLowerCase() === entry.word) return true;
+      // Fallback: prefix + length match
+      const prefix = entry.hint.slice(0, 2);
+      const len = parseInt(entry.hint.split(' ').pop(), 10);
+      const upper = word.toUpperCase();
+      return upper.length === len && upper.startsWith(prefix);
+    }
+
+    function currentEntry() {
+      return (active && index > 0 && index <= queue.length) ? queue[index - 1] : null;
+    }
+
+    // Latch the "got it" guard when the typed word matches the current hint.
+    function armGotIt(word) {
+      if (!active || dismissing || !matches(word)) return false;
+      dismissing = true;
+      return true;
+    }
+    function releaseGotIt() { dismissing = false; }
+
+    function next() {
+      if (!active || dismissing) return;
+
+      // Try up to 2 passes: skip found words, rebuild if needed
+      for (let pass = 0; pass < 2; pass++) {
+        if (index >= queue.length) {
+          queue = rebuildQueue();
+          index = 0;
+
+          if (queue === null) {
+            queue = [];
+            ui.showToast('Hints unavailable');
+            later(() => { stop(); }, 3000);
+            return;
+          }
+          if (queue.length === 0) {
+            ui.showToast('You found them all!');
+            later(() => { stop(); }, 3000);
+            return;
+          }
+        }
+
+        // Skip any entries the user has since found
+        const found = getFoundWords();
+        while (index < queue.length && found.has(queue[index].word)) {
+          index++;
+        }
+
+        if (index < queue.length) {
+          index++;
+          ui.showToast(queue[index - 1]);
+          return;
+        }
+        // All remaining were found — loop back to rebuild
+      }
+
+      // Both passes failed — everything found
+      ui.showToast('You found them all!');
+      later(() => { stop(); }, 3000);
+    }
+
+    function start() {
+      queue = rebuildQueue();
+      index = 0;
+
+      if (queue === null) {
+        queue = [];
+        ui.showToast('Hints unavailable');
+        later(() => { ui.hideToast(); }, 3000);
+        return;
+      }
+      if (queue.length === 0) {
+        ui.showToast('You found them all!');
+        later(() => { ui.hideToast(); }, 3000);
+        return;
+      }
+
+      active = true;
+      ui.beeExit();
+      later(() => { if (active) ui.beeExited(); }, 600);
+      fetchClues(); // pre-fetch in background
+      later(() => { if (active) next(); }, 450);
+    }
+
+    function stop() {
+      active = false;
+      ui.hideToast();
+      ui.beeReset();
+      later(() => ui.beeReturn(), 400);
+    }
+
+    async function expand() {
+      if (!active || index === 0 || index > queue.length) return;
+      const entry = queue[index - 1];
+      // Expand with a loading state BEFORE awaiting: the clue fetch can stall
+      // (see gmRequest), and "." must always visibly respond.
+      ui.showClueLoading();
+      const clues = await fetchClues();
+      if (!active || queue[index - 1] !== entry) return;
+      ui.showClue(clues?.get(entry.word));
+    }
+
+    function collapse() { ui.collapseClue(); }
+    function toggleClue() {
+      if (!active) return;
+      return ui.isClueExpanded() ? collapse() : expand();
+    }
+
+    return {
+      start, next, stop, expand, collapse, toggleClue,
+      matches, armGotIt, releaseGotIt, currentEntry, fetchClues,
+      get state() { return { active, dismissing, index, queueLength: queue.length }; },
+    };
   }
 
-  function stopHints() {
-    hintActive = false;
-    hideHintToast();
-    const bee = document.getElementById('bee-buddy');
-    if (bee) {
-      bee.classList.remove('we-hinting', 'we-exiting', 'we-exited');
-      setTimeout(() => {
-        bee.classList.add('we-returning');
-        bee.addEventListener('animationend', function onReturn() {
-          bee.removeEventListener('animationend', onReturn);
-          bee.classList.remove('we-returning');
-          bee.classList.add('we-arrived');
-        });
-      }, 400);
-    }
-  }
+  const hints = createHintController({
+    getAnswers,
+    getFoundWords,
+    getPuzzleId: () => unsafeWindow.gameData?.today?.id,
+    fetchClueData: puzzleId => (puzzleId ? gmFetch(CLUE_URL(puzzleId)).catch(() => null) : Promise.resolve(null)),
+    ui: hintUi,
+    setTimeout: (fn, ms) => setTimeout(fn, ms), // lambda: a bare setTimeout reference throws when stored
+    random: Math.random,
+  });
 
   // Keyboard shortcuts: ? = start/next hint, . = expand/collapse clue
   document.addEventListener('keydown', e => {
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     if (e.key === '?') {
       e.preventDefault();
-      if (!hintActive) { startHints(); }
-      else { nextHint(); }
-    } else if (e.key === '.' && hintActive) {
+      if (!hints.state.active) { hints.start(); }
+      else { hints.next(); }
+    } else if (e.key === '.' && hints.state.active) {
       e.preventDefault();
-      hintToast.classList.contains('we-expanded') ? collapseHint() : expandHint();
+      hints.toggleClue();
     }
   });
 
@@ -1678,33 +1741,21 @@
   if (typeof unsafeWindow.__bbInternals === 'function') {
     unsafeWindow.__bbInternals({
       // pure / near-pure
-      classifyMessage, currentHintMatches, buildHintQueue, compareVersions,
+      classifyMessage, compareVersions,
       collectUnseenNotes, buildSplashContent, describeFetchError, pickWikiThumbnail,
       getMwAudioUrl, stripGrammarLabels, stripWikiHtml, buildTooltipContent, escapeHTML,
       // network / cache
       gmRequest, gmFetch, fetchDictionary, getDefinition, prefetchDefinition,
-      pumpPrefetch, fetchClues, getWikiImage, apiCache, defInflight,
+      pumpPrefetch, getWikiImage, apiCache, defInflight,
       // DOM
       getAnswers, getFoundWords, processWordList, showTooltip, hideTooltip,
       positionTooltip, showEmoji, showUpdateSplash, hookInputObserver,
       // hint system
-      nextHint, startHints, stopHints, expandHint, collapseHint, showHintToast,
-      hideHintToast, renderHintTiles,
-      get hintState() {
-        return { hintActive, hintQueue, hintIndex, hintDismissing, lastPuzzleId, clueCache, cluePromise };
-      },
-      set hintState(s) {
-        if ('hintActive' in s) hintActive = s.hintActive;
-        if ('hintQueue' in s) hintQueue = s.hintQueue;
-        if ('hintIndex' in s) hintIndex = s.hintIndex;
-        if ('hintDismissing' in s) hintDismissing = s.hintDismissing;
-        if ('lastPuzzleId' in s) lastPuzzleId = s.lastPuzzleId;
-        if ('clueCache' in s) clueCache = s.clueCache;
-        if ('cluePromise' in s) cluePromise = s.cluePromise;
-      },
+      buildHintQueue, createHintController, hints, hintUi, CLUE_URL,
+      showHintToast, hideHintToast, renderHintTiles,
       get lastInputText() { return lastInputText; },
       get onboardingActive() { return onboardingActive; },
-      elements: { hintToast, hintTiles, hintToastCheck, hintToastClue, tooltip, tooltipBody },
+      elements: { hintToast, hintTiles, hintToastCheck, hintToastClue, tooltip, tooltipBody, emojiEl },
     });
   }
 
