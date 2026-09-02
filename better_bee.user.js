@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.48
+// @version      1.49
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -1337,25 +1337,71 @@
       const entry = hints.currentEntry();
       if (entry && !hints.state.dismissing) {
         const tiles = hintTiles.querySelectorAll('.we-hint-tile');
-        const input = (text || '').toUpperCase();
-        const word = (entry.word || '').toUpperCase();
-        for (let i = 0; i < tiles.length; i++) {
-          if (i < input.length) {
-            tiles[i].textContent = input[i];
-            tiles[i].className = 'we-hint-tile ' + (i < 2 ? 'filled' : 'typed');
-          } else if (i < 2) {
-            // Restore prefix placeholder
-            tiles[i].textContent = word[i] || '';
-            tiles[i].className = 'we-hint-tile hint';
-          } else {
-            tiles[i].textContent = '';
-            tiles[i].className = 'we-hint-tile empty';
-          }
-        }
+        computeTileStates(text, entry.word, tiles.length).forEach((state, i) => {
+          tiles[i].textContent = state.text;
+          tiles[i].className = state.className;
+        });
       }
     }).observe(el, { childList: true, characterData: true, subtree: true });
   }
   hookInputObserver();
+
+  // ─── Message reaction (pure pieces of the observer below) ──────────
+  // Pure: tile text/class for the current hive input against the hinted word.
+  function computeTileStates(input, word, tileCount) {
+    const typed = (input || '').toUpperCase();
+    const target = (word || '').toUpperCase();
+    const states = [];
+    for (let i = 0; i < tileCount; i++) {
+      if (i < typed.length) {
+        states.push({ text: typed[i], className: 'we-hint-tile ' + (i < 2 ? 'filled' : 'typed') });
+      } else if (i < 2) {
+        // Restore prefix placeholder
+        states.push({ text: target[i] || '', className: 'we-hint-tile hint' });
+      } else {
+        states.push({ text: '', className: 'we-hint-tile empty' });
+      }
+    }
+    return states;
+  }
+
+  // The NYT message elements inside an added node (the node itself first).
+  function collectMessageNodes(node) {
+    if (node.nodeType !== Node.ELEMENT_NODE) return [];
+    const targets = [];
+    if (node.classList?.contains('sb-message')) targets.push(node);
+    if (node.querySelectorAll) targets.push(...node.querySelectorAll('.sb-message'));
+    return targets;
+  }
+
+  // t0: the word the player submitted. NYT may already have cleared the hive,
+  // so a short direct read falls back to the tracked input.
+  function resolveCapturedWord(directRead, trackedInput) {
+    return directRead.length >= MIN_WORD_LENGTH ? directRead : trackedInput;
+  }
+
+  // t0+100: what to do about a settled NYT message, given whether the got-it
+  // guard was armed for it. `release` means "armed, but this wasn't a success".
+  function planMessageReaction({ text, armed }) {
+    const emojiType = classifyMessage(text);
+    const gotIt = armed && emojiType === 'success';
+    return { emojiType, gotIt, release: armed && !gotIt };
+  }
+
+  // The "got it" celebration: check → got-it style → hide → release guard, advance.
+  function runGotItSequence(controller, ui, setTimeoutFn) {
+    ui.showCheck();
+    setTimeoutFn(() => {
+      ui.markGotIt();
+      setTimeoutFn(() => {
+        ui.hideToast();
+        setTimeoutFn(() => {
+          controller.releaseGotIt();
+          controller.next();
+        }, 400);
+      }, 600);
+    }, 400);
+  }
 
   // ─── Shared MutationObserver (emoji feedback + word list) ───────────
   const mainObserver = new MutationObserver(mutations => {
@@ -1366,37 +1412,18 @@
       for (const node of mutation.addedNodes) {
         if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
-        // Emoji feedback: detect .sb-message
-        const targets = [];
-        if (node.classList?.contains('sb-message')) targets.push(node);
-        if (node.querySelectorAll) targets.push(...node.querySelectorAll('.sb-message'));
-
-        for (const target of targets) {
-          // Use tracked input (reliable) with direct read as fallback
+        // Emoji feedback: react to each NYT message in the added node
+        for (const target of collectMessageNodes(node)) {
+          // Capture the submitted word NOW, before NYT clears the hive
           const input = document.querySelector('.sb-hive-input-content');
-          const directRead = input?.textContent?.trim() || '';
-          const capturedWord = directRead.length >= MIN_WORD_LENGTH ? directRead : lastInputText;
+          const capturedWord = resolveCapturedWord(input?.textContent?.trim() || '', lastInputText);
           // Preemptively guard tiles if this looks like a successful hint match
-          const pendingGotIt = hints.armGotIt(capturedWord);
+          const armed = hints.armGotIt(capturedWord);
           setTimeout(() => {
-            const text = target.textContent?.trim();
-            const type = classifyMessage(text);
-            if (type) showEmoji(EMOJIS[type], type);
-            if (type === 'success' && pendingGotIt) {
-              hintToastCheck.classList.add('we-visible');
-              setTimeout(() => {
-                hintToast.classList.add('we-got-it');
-                setTimeout(() => {
-                  hideHintToast();
-                  setTimeout(() => {
-                    hints.releaseGotIt();
-                    hints.next();
-                  }, 400);
-                }, 600);
-              }, 400);
-            } else if (pendingGotIt) {
-              hints.releaseGotIt();  // Wasn't success — release guard
-            }
+            const plan = planMessageReaction({ text: target.textContent?.trim(), armed });
+            if (plan.emojiType) showEmoji(EMOJIS[plan.emojiType], plan.emojiType);
+            if (plan.gotIt) runGotItSequence(hints, hintUi, (fn, ms) => setTimeout(fn, ms));
+            else if (plan.release) hints.releaseGotIt();  // Wasn't success — release guard
           }, 100);
         }
 
@@ -1741,7 +1768,8 @@
   if (typeof unsafeWindow.__bbInternals === 'function') {
     unsafeWindow.__bbInternals({
       // pure / near-pure
-      classifyMessage, compareVersions,
+      classifyMessage, resolveCapturedWord, planMessageReaction, collectMessageNodes,
+      computeTileStates, runGotItSequence, compareVersions,
       collectUnseenNotes, buildSplashContent, describeFetchError, pickWikiThumbnail,
       getMwAudioUrl, stripGrammarLabels, stripWikiHtml, buildTooltipContent, escapeHTML,
       // network / cache
