@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.46
+// @version      1.47
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -1670,5 +1670,42 @@
 
   // ─── Init ───────────────────────────────────────────────────────────
   processWordList();
+
+  // ─── Test seam ──────────────────────────────────────────────────────
+  // No-op in production: nothing on the NYT page defines __bbInternals.
+  // tests/harness.mjs sets it before evaluating this file so tests can drive
+  // the real functions and state instead of copy-pasted mirrors.
+  if (typeof unsafeWindow.__bbInternals === 'function') {
+    unsafeWindow.__bbInternals({
+      // pure / near-pure
+      classifyMessage, currentHintMatches, buildHintQueue, compareVersions,
+      collectUnseenNotes, buildSplashContent, describeFetchError, pickWikiThumbnail,
+      getMwAudioUrl, stripGrammarLabels, stripWikiHtml, buildTooltipContent, escapeHTML,
+      // network / cache
+      gmRequest, gmFetch, fetchDictionary, getDefinition, prefetchDefinition,
+      pumpPrefetch, fetchClues, getWikiImage, apiCache, defInflight,
+      // DOM
+      getAnswers, getFoundWords, processWordList, showTooltip, hideTooltip,
+      positionTooltip, showEmoji, showUpdateSplash, hookInputObserver,
+      // hint system
+      nextHint, startHints, stopHints, expandHint, collapseHint, showHintToast,
+      hideHintToast, renderHintTiles,
+      get hintState() {
+        return { hintActive, hintQueue, hintIndex, hintDismissing, lastPuzzleId, clueCache, cluePromise };
+      },
+      set hintState(s) {
+        if ('hintActive' in s) hintActive = s.hintActive;
+        if ('hintQueue' in s) hintQueue = s.hintQueue;
+        if ('hintIndex' in s) hintIndex = s.hintIndex;
+        if ('hintDismissing' in s) hintDismissing = s.hintDismissing;
+        if ('lastPuzzleId' in s) lastPuzzleId = s.lastPuzzleId;
+        if ('clueCache' in s) clueCache = s.clueCache;
+        if ('cluePromise' in s) cluePromise = s.cluePromise;
+      },
+      get lastInputText() { return lastInputText; },
+      get onboardingActive() { return onboardingActive; },
+      elements: { hintToast, hintTiles, hintToastCheck, hintToastClue, tooltip, tooltipBody },
+    });
+  }
 
 })();
