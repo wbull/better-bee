@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better Bee
 // @namespace    https://wilsonbull.local/spelling-bee
-// @version      1.46
+// @version      1.51
 // @description  NYT Spelling Bee enhancements: dock hiding, emoji feedback, hint system, Word Explorer
 // @match        https://www.nytimes.com/puzzles/spelling-bee*
 // @match        https://www.nytimes.com/*
@@ -1123,7 +1123,8 @@
           const url = `https://static01.nyt.com/newsgraphics/2023-01-18-spelling-bee-buddy/clues/${puzzleId}.json`;
           const data = await gmFetch(url).catch(() => null);
           if (data && Array.isArray(data)) {
-            clueCache = new Map(data.map(c => [c.word, c]));
+            // Some forum clues arrive with the word stripped but its separator kept (": Outline, ...")
+            clueCache = new Map(data.map(c => [c.word, { ...c, text: c.text?.replace(/^[\s:;,.\-–—]+/, '') }]));
           }
         } catch { /* silent fail — Level 2 will show fallback */ }
         cluePromise = null;
